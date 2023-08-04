@@ -175,8 +175,11 @@ def download(args):
                     # Row in dataframe
                     annotation = [
                         media_name,
+                        os.path.basename(paths[f_idx]),
                         paths[f_idx],
                         frame,
+                        Media.width,
+                        Media.height,
                         scientific,
                         common,
                         xmin,
@@ -189,7 +192,8 @@ def download(args):
                     annotations.append(annotation)
 
             # Pandas dataframe
-            annotations = pd.DataFrame(annotations, columns=['Media', 'Image', 'Frame',
+            annotations = pd.DataFrame(annotations, columns=['Media', 'Image Name', 'Image Path',
+                                                             'Frame', 'Width', 'Height',
                                                              'ScientificName', 'CommonName',
                                                              'xmin', 'ymin', 'xmax', 'ymax'])
             # Output to media directory for later
