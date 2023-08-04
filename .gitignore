@@ -1,0 +1,8 @@
+*.hd
+*.hdf5
+*.idea
+*.pt
+*__pycache__/
+/Data/
+Toolbox/gooey_config.json
+
