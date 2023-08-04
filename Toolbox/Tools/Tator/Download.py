@@ -118,6 +118,11 @@ def download(args):
             # Filter for bounding boxes
             localizations = [l for l in localizations if 'ScientificName' in l.attributes]
 
+            # Filter for ground truth, or else all
+            if args.human_made:
+                print(f"NOTE: Collecting human-made annotated media from {media_name}")
+                localizations = [l for l in localizations if l.attributes['ID Analyst'] != 'Algorithm']
+
             # Get the frames associate with localizations
             frames = [l.frame for l in localizations]
 
@@ -217,6 +222,9 @@ def main():
 
     parser.add_argument("--media_ids", type=int, nargs='+',
                         help="ID for desired media(s)")
+
+    parser.add_argument("--human_made", type=bool, default=True,
+                        help="To download only ground truth by humans")
 
     parser.add_argument("--output_dir", type=str,
                         default=f"{os.path.abspath('../../../Data/Ground_Truth/')}",
