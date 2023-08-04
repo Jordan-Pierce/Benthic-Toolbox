@@ -16,8 +16,31 @@ from concurrent.futures import ThreadPoolExecutor
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
+def plot_data(annotations, media_dir, media_name):
+    """
+    :param annotations:
+    :param media_dir:
+    :return:
+    """
 
-def download_image(api, media, frame, media_dir):
+    # Output a data distribution chart
+    annotations['ScientificName'].value_counts().plot(kind='bar')
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.9)
+    plt.title(f"{media_name}")
+    plt.savefig(f"{media_dir}/ScientificName.png")
+    plt.close()
+
+    # Output a data distribution chart
+    annotations['CommonName'].value_counts().plot(kind='bar')
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.9)
+    plt.title(f"{media_name}")
+    plt.savefig(f"{media_dir}/CommonName.png")
+    plt.close()
+
+
+def download_image(api, media_id, frame, media_dir):
     """
     :param api:
     :param media:
@@ -34,7 +57,7 @@ def download_image(api, media, frame, media_dir):
 
     # If it doesn't already exist, download, move.
     if not os.path.exists(path):
-        temp = api.get_frame(media, frames=[frame])
+        temp = api.get_frame(media_id, frames=[frame])
         shutil.move(temp, path)
 
     return path
@@ -50,7 +73,7 @@ def download(args):
     print("Download")
     print("###############################################\n")
 
-    # Root data location on V drive, change as needed
+    # Root data location
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
@@ -65,15 +88,24 @@ def download(args):
         sys.exit(1)
 
     # Pass the project and media list to variables
-    project_id = args.project_id
-    medias = args.medias
+    if args.project_id:
+        project_id = args.project_id
+    else:
+        print(f"ERROR: Project ID provided is invalid; please check input")
+        sys.exit(1)
 
-    # Loop through media
-    for media in medias:
+    if args.media_ids:
+        media_ids = args.media_ids
+    else:
+        print(f"ERROR: Medias provided is invalid; please check input")
+        sys.exit(1)
+
+    # Loop through medias
+    for media_id in media_ids:
 
         try:
             # Name used for output
-            Media = api.get_media(media)
+            Media = api.get_media(media_id)
             media_name = Media.name.replace(":", "__").split(".")[0]
             media_dir = f"{output_dir}/{media_name}/"
             os.makedirs(media_dir, exist_ok=True)
@@ -81,7 +113,7 @@ def download(args):
             print(f"NOTE: Collecting annotated media from {media_name}")
 
             # Get all localizations
-            localizations = api.get_localization_list(project_id, media_id=[media])
+            localizations = api.get_localization_list(project_id, media_id=[media_id])
 
             # Filter for bounding boxes
             localizations = [l for l in localizations if 'ScientificName' in l.attributes]
@@ -89,11 +121,15 @@ def download(args):
             # Get the frames associate with localizations
             frames = [l.frame for l in localizations]
 
+            if not frames or not localizations:
+                print("NOTE: No annotated frames for this media")
+                continue
+
             # Download the associated frame
             with ThreadPoolExecutor(max_workers=100) as executor:
                 paths = [executor.submit(download_image,
                                          api,
-                                         media,
+                                         media_id,
                                          frame,
                                          media_dir) for frame in frames]
 
@@ -121,8 +157,9 @@ def download(args):
                     w = frame_localization.width
                     h = frame_localization.height
 
-                    # Label
-                    label = frame_localization.attributes['ScientificName']
+                    # Labels
+                    scientific = frame_localization.attributes['ScientificName']
+                    common = frame_localization.attributes['CommonName']
 
                     # Convert to COCO format
                     xmin = int(x * Media.width)
@@ -135,7 +172,8 @@ def download(args):
                         media_name,
                         paths[f_idx],
                         frame,
-                        label,
+                        scientific,
+                        common,
                         xmin,
                         ymin,
                         xmax,
@@ -146,21 +184,17 @@ def download(args):
                     annotations.append(annotation)
 
             # Pandas dataframe
-            annotations = pd.DataFrame(annotations, columns=['Media', 'Image', 'Frame', 'Label',
+            annotations = pd.DataFrame(annotations, columns=['Media', 'Image', 'Frame',
+                                                             'ScientificName', 'CommonName',
                                                              'xmin', 'ymin', 'xmax', 'ymax'])
             # Output to media directory for later
             annotations.to_csv(f"{media_dir}/annotations.csv")
 
-            # Output a data distribution chart
-            annotations['Label'].value_counts().plot(kind='bar')
-            plt.tight_layout()
-            plt.subplots_adjust(top=0.9)
-            plt.title(f"{media_name}")
-            plt.savefig(f"{media_dir}/Distribution.png")
-            plt.close()
+            # Plot data summaries
+            plot_data(annotations, media_dir, media_name)
 
         except Exception as e:
-            print(f"ERROR: Could not collect media {media} from Tator\n{e}")
+            print(f"ERROR: Could not collect media {media_id} from Tator\n{e}")
 
 
 # -----------------------------------------------------------------------------
@@ -172,7 +206,7 @@ def main():
 
     """
 
-    parser = argparse.ArgumentParser(description="Model Inference")
+    parser = argparse.ArgumentParser(description="Download")
 
     parser.add_argument("--api_token", type=str,
                         default=os.getenv('TATOR_TOKEN'),
@@ -181,8 +215,8 @@ def main():
     parser.add_argument("--project_id", type=int,
                         help="Project ID for desired media")
 
-    parser.add_argument("--medias", type=int, nargs='+',
-                        help="Project ID for desired media")
+    parser.add_argument("--media_ids", type=int, nargs='+',
+                        help="ID for desired media(s)")
 
     parser.add_argument("--output_dir", type=str,
                         default=f"{os.path.abspath('../../../Data/Ground_Truth/')}",
