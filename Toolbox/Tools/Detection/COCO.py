@@ -73,11 +73,15 @@ def coco(args):
             xmax = r['xmax']
             ymax = r['ymax']
 
+            # Instance segmentation mask as polygon (list of vertices representing a rectangle)
+            mask_polygon = [xmin, ymin, xmin, ymax, xmax, ymax, xmax, ymin]
+
             data_anno = dict(
                 image_id=i_idx,
                 id=a_idx,
                 category_id=class_mapping[r['ScientificName']],
                 bbox=[xmin, ymin, xmax, ymax],
+                segmentation=[mask_polygon],
                 area=(xmax - xmin) * (ymax - ymin),
                 iscrowd=0)
 
