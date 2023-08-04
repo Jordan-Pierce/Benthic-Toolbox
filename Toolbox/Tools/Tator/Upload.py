@@ -82,8 +82,8 @@ def upload(args):
             'frame': frame,
             'ScientificName': scientific,
             'CommonName': common,
-            'species': species,
-            'confidence': confidence
+            'Species': species,
+            'Confidence': confidence
         }
 
         # Add to list
