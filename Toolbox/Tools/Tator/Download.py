@@ -179,15 +179,13 @@ def main():
                         help="Tator API Token")
 
     parser.add_argument("--project_id", type=int,
-                        default=70,
                         help="Project ID for desired media")
 
     parser.add_argument("--medias", type=int, nargs='+',
-                        default=[4525779],
                         help="Project ID for desired media")
 
     parser.add_argument("--output_dir", type=str,
-                        default=f"{os.path.abspath('../../../Data/Test/')}",
+                        default=f"{os.path.abspath('../../../Data/Ground_Truth/')}",
                         help="Path to the output directory.")
 
     args = parser.parse_args()
