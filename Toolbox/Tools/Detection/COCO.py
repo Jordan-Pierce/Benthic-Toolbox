@@ -115,7 +115,7 @@ def main():
 
     """
 
-    parser = argparse.ArgumentParser(description="Upload")
+    parser = argparse.ArgumentParser(description="COCO")
 
     parser.add_argument("--annotations", type=str, nargs="+",
                         help="Path to the annotation files")
