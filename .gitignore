@@ -5,6 +5,7 @@
 *.pth
 *__pycache__/
 /Data/
+/Toolbox/Data/
 /Toolbox/Legacy/
 /Toolbox/Tools/Detection/configs/
 /Toolbox/Tools/Detection/checkpoints/

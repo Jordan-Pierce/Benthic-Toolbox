@@ -30,8 +30,11 @@ def coco(args):
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    # Output file
-    output_file = f"{output_dir}/coco_annotations.json"
+    # Output coco annotation file
+    coco_file = f"{output_dir}\\coco_annotations.json"
+
+    # Output class map json file
+    class_map_file = f"{output_dir}\\class_map.json"
 
     # To hold the coco formatted data
     images = []
@@ -87,23 +90,32 @@ def coco(args):
 
             objects.append(data_anno)
 
+    # Create the categories
+    categories = [{'id': class_id, 'name': class_name} for class_name, class_id in class_mapping.items()]
+
     # Create COCO format json
     coco_format_json = dict(
         images=images,
         annotations=objects,
-        categories=[{
-            'id': class_id,
-            'name': class_name
-        } for class_name, class_id in class_mapping.items()])
+        categories=categories)
 
     # Save to output file
-    with open(output_file, 'w') as out:
+    with open(coco_file, 'w') as out:
         json.dump(coco_format_json, out, indent=3)
 
-    if os.path.exists(output_file):
-        print(f"NOTE: COCO formatted file saved to {output_file}")
+    if os.path.exists(coco_file):
+        print(f"NOTE: COCO formatted file saved to {coco_file}")
     else:
         print("ERROR: Could not save COCO formatted file")
+
+    # Write the JSON data to the output file
+    with open(class_map_file, 'w') as output_file:
+        json.dump(categories, output_file, indent=3)
+
+    if os.path.exists(class_map_file):
+        print(f"NOTE: Class Map JSON file saved to {class_map_file}")
+    else:
+        print("ERROR: Could not save Class Map JSON file")
 
 
 # -----------------------------------------------------------------------------
