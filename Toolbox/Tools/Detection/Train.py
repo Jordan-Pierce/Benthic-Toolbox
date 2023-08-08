@@ -27,32 +27,6 @@ CHECKPOINT_DIR = f"./checkpoints/"
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
 
-def download_checkpoint(url, path):
-    """
-    :param url:
-    :param path:
-    :return:
-    """
-
-    try:
-        # Send an HTTP GET request to the URL
-        response = requests.get(url)
-
-        # Check if the request was successful (status code 200)
-        if response.status_code == 200:
-            with open(path, 'wb') as file:
-                file.write(response.content)
-            print(f"NOTE: Downloaded to {path}")
-
-        else:
-            raise Exception
-
-    # If it didn't download, exit.
-    except Exception as e:
-        print(f"ERROR: Failed to download file")
-        sys.exit(1)
-
-
 def get_metainfo(class_map):
     """
     :param class_map:
@@ -120,28 +94,15 @@ def train(args):
     os.makedirs(work_dir, exist_ok=True)
     cfg.work_dir = work_dir
 
-    # Check that the expected weights are there
-    checkpoint_url = cfg.checkpoint
-    checkpoint_path = f"{CHECKPOINT_DIR}{os.path.basename(checkpoint_url)}"
-
-    # If checkpoint does not exist, download it
-    if not os.path.exists(checkpoint_path):
-        print(f"NOTE: Downloading {os.path.basename(checkpoint_url)}")
-        download_checkpoint(checkpoint_url, checkpoint_path)
-
-    print(f"NOTE: Loading checkpoint {os.path.basename(checkpoint_path)}")
-    # Set the path of the checkpoint
-    cfg.load_from = checkpoint_path
-
     # Training parameters
-    train_batch_size_per_gpu = 16
+    batch_size = 16
     max_epochs = 500
-    checkpoint_interval = 100
     base_lr = 0.00008
+    val_interval = 100
 
     print(f"NOTE: Setting training parameters")
     cfg.max_epochs = max_epochs
-    cfg.default_hooks['checkpoint']['interval'] = checkpoint_interval
+    cfg.default_hooks['checkpoint']['interval'] = val_interval
 
     print(f"NOTE: Setting data root to {args.data_root}")
     # Path to dataset
@@ -153,7 +114,9 @@ def train(args):
 
     print(f"NOTE: Creating train dataloader")
     # Data Loaders
-    cfg.train_dataloader['batch_size'] = train_batch_size_per_gpu
+    cfg.train_cfg['max_epochs'] = max_epochs
+    cfg.train_cfg['val_interval'] = val_interval
+    cfg.train_dataloader['batch_size'] = batch_size
     cfg.train_dataloader['dataset']['data_root'] = f"{args.data_root}\\"
     cfg.train_dataloader['dataset']['ann_file'] = annotations
     cfg.train_dataloader['dataset']['data_prefix'] = {'img': 'frames\\'}
@@ -161,7 +124,7 @@ def train(args):
 
     print(f"NOTE: Creating valid dataloader")
     # Valid dataloader
-    cfg.val_dataloader['batch_size'] = 1
+    cfg.val_dataloader['batch_size'] = batch_size
     cfg.val_dataloader['dataset']['data_root'] = f"{args.data_root}\\"
     cfg.val_dataloader['dataset']['ann_file'] = annotations
     cfg.val_dataloader['dataset']['data_prefix'] = {'img': 'frames\\'}
@@ -196,7 +159,6 @@ def train(args):
 
     try:
         print("NOTE: Starting training")
-        # start training
         runner.train()
     except Exception as e:
         print(f"ERROR: {e}")
