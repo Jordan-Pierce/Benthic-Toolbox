@@ -90,7 +90,7 @@ def train(args):
 
     # Create the output folder
     output_dir = args.output_dir
-    work_dir = f"{output_dir}\\model\\"
+    work_dir = f"{output_dir}model\\"
     os.makedirs(work_dir, exist_ok=True)
     cfg.work_dir = work_dir
 
@@ -117,17 +117,17 @@ def train(args):
     cfg.train_cfg['max_epochs'] = max_epochs
     cfg.train_cfg['val_interval'] = val_interval
     cfg.train_dataloader['batch_size'] = batch_size
-    cfg.train_dataloader['dataset']['data_root'] = f"{args.data_root}\\"
+    cfg.train_dataloader['dataset']['data_root'] = f"{args.data_root}"
     cfg.train_dataloader['dataset']['ann_file'] = annotations
-    cfg.train_dataloader['dataset']['data_prefix'] = {'img': 'frames\\'}
+    cfg.train_dataloader['dataset']['data_prefix'] = {'img': ''}
     cfg.train_dataloader['dataset']['metainfo'] = metainfo
 
     print(f"NOTE: Creating valid dataloader")
     # Valid dataloader
     cfg.val_dataloader['batch_size'] = batch_size
-    cfg.val_dataloader['dataset']['data_root'] = f"{args.data_root}\\"
+    cfg.val_dataloader['dataset']['data_root'] = f"{args.data_root}"
     cfg.val_dataloader['dataset']['ann_file'] = annotations
-    cfg.val_dataloader['dataset']['data_prefix'] = {'img': 'frames\\'}
+    cfg.val_dataloader['dataset']['data_prefix'] = {'img': ''}
     cfg.val_dataloader['dataset']['metainfo'] = metainfo
 
     print(f"NOTE: Creating test dataloader")
@@ -136,7 +136,7 @@ def train(args):
 
     print(f"NOTE: Creating evaluators")
     # Evaluators, make them the same
-    cfg.val_evaluator['ann_file'] = f"{args.data_root}\\{annotations}"
+    cfg.val_evaluator['ann_file'] = f"{args.data_root}{annotations}"
     cfg.test_evaluator = cfg.val_evaluator
 
     print("NOTE: Setting launcher")
