@@ -2,6 +2,7 @@ import os
 import sys
 import shutil
 import argparse
+import traceback
 from tqdm import tqdm
 
 import tator
@@ -12,11 +13,14 @@ import matplotlib.patches as patches
 
 from concurrent.futures import ThreadPoolExecutor
 
+import warnings
+warnings.filterwarnings('ignore')
+
 
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
-def plot_data(annotations, media_dir, media_name):
+def plot_distributions(annotations, media_dir, media_name):
     """
     :param annotations:
     :param media_dir:
@@ -24,19 +28,10 @@ def plot_data(annotations, media_dir, media_name):
     """
 
     # Output a data distribution chart
-    annotations['ScientificName'].value_counts().plot(kind='bar')
-    plt.tight_layout()
-    plt.subplots_adjust(top=0.9)
+    plt.figure(figsize=(20, 20))
+    annotations['Scientific Name'].value_counts().plot(kind='bar')
     plt.title(f"{media_name}")
-    plt.savefig(f"{media_dir}/ScientificName.png")
-    plt.close()
-
-    # Output a data distribution chart
-    annotations['CommonName'].value_counts().plot(kind='bar')
-    plt.tight_layout()
-    plt.subplots_adjust(top=0.9)
-    plt.title(f"{media_name}")
-    plt.savefig(f"{media_dir}/CommonName.png")
+    plt.savefig(f"{media_dir}/Scientific Name.png")
     plt.close()
 
 
@@ -61,6 +56,44 @@ def download_image(api, media_id, frame, media_dir):
         shutil.move(temp, path)
 
     return path
+
+
+def get_localizations(localizations, tracks):
+    """
+    :param localizatins:
+    :param tracks:
+    :return:
+    """
+    print(f"NOTE: Merging track localizations and localizations")
+
+    # Holds the localizations in the tracks
+    track_localizations = []
+    # Holds the standard version of localizations
+    clean_localizations = []
+
+    for track in tracks:
+        # The attributes dict for the current track
+        attributes = track.attributes
+        attributes['track_id'] = track.id
+        for localization in track.localizations:
+            # Assign the localization id, add attributes
+            t = {'id': localization}
+            t.update(attributes)
+            track_localizations.append(t)
+
+    for track_localization in track_localizations:
+        # Find the localization that corresponds to the track localization by id
+        localization = [l for l in localizations if l.id == track_localization['id']]
+
+        # If there is a localization (there should be)
+        if localization:
+            # Update the localization with attributes from track localization
+            clean_localization = localization[0]
+            clean_localization.attributes.update(track_localization)
+            # Save in cleaned list
+            clean_localizations.append(clean_localization)
+
+    return localizations
 
 
 def download(args):
@@ -110,34 +143,34 @@ def download(args):
             media_dir = f"{output_dir}/{media_name}/"
             os.makedirs(media_dir, exist_ok=True)
 
-            print(f"NOTE: Collecting annotated media from {media_name}")
+            print(f"NOTE: Media ID {media_id} corresponds to {Media.name}")
 
-            # Get all localizations
+            # Get all localizations, filter for those that are actually bounding boxes
             localizations = api.get_localization_list(project_id, media_id=[media_id])
+            localizations = [l for l in localizations if None not in [l.x, l.y, l.width, l.height]]
+            print(f"NOTE: Found {len(localizations)} localizations")
 
-            # Filter for bounding boxes
-            localizations = [l for l in localizations if 'ScientificName' in l.attributes]
+            # Get all the tracks, filter for just those with bounding boxes
+            tracks = api.get_state_list(project_id, media_id=[media_id])
+            tracks = [t for t in tracks if t.localizations]
+            print(f"NOTE: Found {len(tracks)} tracks")
 
-            # Filter for ground truth, or else all
-            if args.human_made:
-                print(f"NOTE: Collecting human-made annotated media from {media_name}")
-                localizations = [l for l in localizations if l.attributes['ID Analyst'] != 'Algorithm']
+            # Combine the two to create a standardized list of localizations
+            localizations = get_localizations(localizations, tracks)
+            print(f"NOTE: {len(localizations)} total localizations for media {media_name}")
 
             # Get the frames associate with localizations
-            frames = [l.frame for l in localizations]
+            frames = list(set([l.frame for l in localizations]))
+            print(f"NOTE: Found {len(frames)} frames with localizations for media {media_name}")
 
             if not frames or not localizations:
-                print("NOTE: No annotated frames for this media")
+                print("NOTE: No frames with localizations for this media")
                 continue
 
-            # Download the associated frame
+            # Download the associated frames
+            print(f"NOTE: Downloading {len(frames)} frames for {media_name}")
             with ThreadPoolExecutor(max_workers=100) as executor:
-                paths = [executor.submit(download_image,
-                                         api,
-                                         media_id,
-                                         frame,
-                                         media_dir) for frame in frames]
-
+                paths = [executor.submit(download_image, api, media_id, frame, media_dir) for frame in frames]
                 # Contains a list of frame paths on local machine
                 paths = [future.result() for future in paths]
 
@@ -162,15 +195,30 @@ def download(args):
                     w = frame_localization.width
                     h = frame_localization.height
 
-                    # Labels
-                    scientific = frame_localization.attributes['ScientificName']
-                    common = frame_localization.attributes['CommonName']
-
                     # Convert to COCO format
                     xmin = int(x * Media.width)
                     ymin = int(y * Media.height)
                     xmax = int(w * Media.width) + xmin
                     ymax = int(h * Media.height) + ymin
+
+                    # Frame number, localization id
+                    frame = frame_localization.frame
+                    localization_id = frame_localization.id
+
+                    # For some reason, class categories are different...
+                    if 'Scientific Name' in frame_localization.attributes:
+                        s = 'Scientific Name'
+                    elif 'ScientificName' in frame_localization.attributes:
+                        s = 'ScientificName'
+                    else:
+                        s = ""
+
+                    # Get the actual scientific name
+                    if s in frame_localization.attributes:
+                        scientific = frame_localization.attributes[s]
+                    else:
+                        print(f"WARNING: Frame {frame} localization {localization_id} has no label!")
+                        scientific = "Unlabeled"
 
                     # Row in dataframe
                     annotation = [
@@ -181,7 +229,6 @@ def download(args):
                         Media.width,
                         Media.height,
                         scientific,
-                        common,
                         xmin,
                         ymin,
                         xmax,
@@ -193,17 +240,24 @@ def download(args):
 
             # Pandas dataframe
             annotations = pd.DataFrame(annotations, columns=['Media', 'Image Name', 'Image Path',
-                                                             'Frame', 'Width', 'Height',
-                                                             'ScientificName', 'CommonName',
+                                                             'Frame', 'Width', 'Height', 'Scientific Name',
                                                              'xmin', 'ymin', 'xmax', 'ymax'])
             # Output to media directory for later
+            print(f"NOTE: Saving {len(annotations)} annotations to {media_dir}")
             annotations.to_csv(f"{media_dir}/annotations.csv")
 
+            if os.path.exists(f"{media_dir}/annotations.csv"):
+                print("NOTE: Annotations saved successfully")
+            else:
+                raise Exception
+
             # Plot data summaries
-            plot_data(annotations, media_dir, media_name)
+            plot_distributions(annotations, media_dir, media_name)
 
         except Exception as e:
-            print(f"ERROR: Could not collect media {media_id} from Tator\n{e}")
+            print(f"ERROR: Could not finish collecting media {media_id} from Tator")
+            print(f"ERROR: {e}")
+            traceback.print_exc()
 
 
 # -----------------------------------------------------------------------------
@@ -242,6 +296,7 @@ def main():
 
     except Exception as e:
         print(f"ERROR: {e}")
+
 
 
 if __name__ == "__main__":
