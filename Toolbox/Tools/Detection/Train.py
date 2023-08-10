@@ -102,10 +102,10 @@ def train(args):
     cfg.work_dir = work_dir
 
     # Training parameters
-    batch_size = args.batch_size
-    max_epochs = 100
-    base_lr = 0.0005
+    base_lr = args.lr
     val_interval = 1
+    max_epochs = args.max_epoch
+    batch_size = args.batch_size
 
     print(f"NOTE: Setting training parameters")
     cfg.max_epochs = max_epochs
@@ -208,7 +208,13 @@ def main():
                         help='Directory to save logs and models')
 
     parser.add_argument('--batch_size', type=int, default=32,
-                        help='Directory to save logs and models')
+                        help='Number of samples to pass model in a single batch (GPU dependent')
+
+    parser.add_argument('--max_epochs', type=int, default=500,
+                        help='Total number of times model sees every sample in training set')
+
+    parser.add_argument('--lr', type=float, default=0.004,
+                        help='The amount to adjust model parameters by during back-prop')
 
     parser.add_argument('--launcher', choices=['none', 'pytorch', 'slurm', 'mpi'],
                         default='none', help='job launcher')
