@@ -3,12 +3,75 @@ import sys
 import argparse
 
 import json
+import random
 import pandas as pd
-
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
+
+
+def plot_coco_samples(coco_file, color_map, output_dir, n_images=5, seed=None):
+    """
+    :param coco_annotations_file:
+    :param output_dir:
+    :param n_images:
+    :param seed:
+    :return:
+    """
+
+    if not os.path.exists(coco_file):
+        return
+
+    print(f"NOTE: Plotting {n_images} samples from {os.path.basename(coco_file)}")
+
+    # Load COCO annotations JSON file
+    with open(coco_file, 'r') as f:
+        coco_data = json.load(f)
+
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Set random seed for reproducibility
+    random.seed(seed)
+
+    # Randomly shuffle image IDs
+    image_ids = [img_info['id'] for img_info in coco_data['images']]
+    random.shuffle(image_ids)
+
+    # Loop through randomly selected images
+    for img_id in image_ids[:n_images]:
+        img_info = next(info for info in coco_data['images'] if info['id'] == img_id)
+        img_file_name = img_info['file_name']
+
+        # Find annotations for the current image
+        img_annotations = [anno for anno in coco_data['annotations'] if anno['image_id'] == img_id]
+
+        if len(img_annotations) == 0:
+            continue
+
+        # Load and plot the image
+        img_path = os.path.join(output_dir, img_file_name)
+        image = plt.imread(img_path)
+        plt.imshow(image)
+
+        # Plot bounding boxes
+        for annotation in img_annotations:
+            bbox = annotation['bbox']
+            bbox_rect = Rectangle((bbox[0], bbox[1]), bbox[2], bbox[3],
+                                  linewidth=1, edgecolor='r', facecolor='none')
+            plt.gca().add_patch(bbox_rect)
+
+        plt.axis('off')
+        plt.title(f"Image ID: {img_id}")
+
+        # Save the plot
+        output_file = os.path.join(output_dir, f"image_{img_id}.png")
+        plt.savefig(output_file, bbox_inches='tight', pad_inches=0.1)
+        plt.close()
+
 
 def concat_annotations(annotation_files):
     """
@@ -48,7 +111,7 @@ def to_coco(annotations, class_mapping, coco_file):
 
     # If no annotations, return
     if annotations.empty:
-        return
+        return ""
 
     # To hold the coco formatted data
     images = []
@@ -84,7 +147,7 @@ def to_coco(annotations, class_mapping, coco_file):
                 image_id=i_idx,
                 id=a_idx,
                 category_id=class_mapping[r['Scientific Name']],
-                bbox=[xmin, ymin, xmax, ymax],
+                bbox=[xmin, ymin, xmax - xmin, ymax - ymin],
                 segmentation=[mask_polygon],
                 area=(xmax - xmin) * (ymax - ymin),
                 iscrowd=0)
@@ -108,6 +171,8 @@ def to_coco(annotations, class_mapping, coco_file):
         print(f"NOTE: COCO formatted file saved to {coco_file}")
     else:
         print("ERROR: Could not save COCO formatted file")
+
+    return coco_file
 
 
 def coco(args):
@@ -150,9 +215,9 @@ def coco(args):
     class_mapping = {v: i for i, v in enumerate(annotations['Scientific Name'].unique())}
 
     # Create COCO format annotations for each of the datasets
-    to_coco(train_annotations, class_mapping, train_file)
-    to_coco(valid_annotations, class_mapping, valid_file)
-    to_coco(test_annotations, class_mapping, test_file)
+    train_coco = to_coco(train_annotations, class_mapping, train_file)
+    valid_coco = to_coco(valid_annotations, class_mapping, valid_file)
+    test_coco = to_coco(test_annotations, class_mapping, test_file)
 
     # Updated class mapping file as expected by training script
     categories = [{'id': class_id, 'name': class_name} for class_name, class_id in class_mapping.items()]
@@ -165,6 +230,13 @@ def coco(args):
         print(f"NOTE: Class Map JSON file saved to {class_map_file}")
     else:
         print("ERROR: Could not save Class Map JSON file")
+
+    # Plot samples in ground-truth directory
+    if args.plot_n_samples:
+        n_samples = args.plot_n_samples
+        plot_coco_samples(train_coco, class_map_file,  f"{output_dir}\\plots\\", n_samples)
+        plot_coco_samples(valid_coco, class_map_file, f"{output_dir}\\plots\\", n_samples)
+        plot_coco_samples(test_coco, class_map_file, f"{output_dir}\\plots\\", n_samples)
 
 
 # -----------------------------------------------------------------------------
@@ -189,6 +261,9 @@ def main():
 
     parser.add_argument("--single_object_detector", action='store_true',
                         help="All labels are replaced with a single class category")
+
+    parser.add_argument("--plot_n_samples", type=int, default=5,
+                        help="Plot N samples to show COCO labels on images")
 
     parser.add_argument("--output_dir", type=str,
                         default=f"{os.path.abspath('../../../Data/Ground_Truth/')}",

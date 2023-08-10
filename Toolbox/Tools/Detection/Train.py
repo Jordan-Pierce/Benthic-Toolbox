@@ -19,8 +19,10 @@ from mmengine.runner import Runner
 
 from mmdet.utils import setup_cache_size_limit_of_dynamo
 
-# Where all checkpoints are stored
-CHECKPOINT_DIR = f"./checkpoints/"
+import datetime
+
+now = datetime.datetime.now()
+now = now.strftime("%Y-%m-%d_%H-%M-%S")
 
 
 # ------------------------------------------------------------------------------------------------------------------
@@ -84,29 +86,31 @@ def train(args):
     # Set the config file
     if os.path.exists(args.config):
         config_file = args.config
+        config_name = os.path.basename(config_file).split(".")[0]
     else:
         print(f"ERROR: Configuration file does not exist; check input provided")
         sys.exit(1)
 
-    print(f"NOTE: Using config file {os.path.basename(config_file)}")
+    print(f"NOTE: Using config file {config_name}")
     # Create the config
     cfg = Config.fromfile(config_file)
 
     # Create the output folder
     output_dir = args.output_dir
-    work_dir = f"{output_dir}model\\"
+    work_dir = f"{output_dir}{now}_{config_name}\\"
     os.makedirs(work_dir, exist_ok=True)
     cfg.work_dir = work_dir
 
     # Training parameters
-    batch_size = 16
-    max_epochs = 500
-    base_lr = 0.00008
-    val_interval = 100
+    batch_size = args.batch_size
+    max_epochs = 100
+    base_lr = 0.0005
+    val_interval = 1
 
     print(f"NOTE: Setting training parameters")
     cfg.max_epochs = max_epochs
     cfg.default_hooks['checkpoint']['interval'] = val_interval
+    cfg.optim_wrapper['optimizer']['lr'] = base_lr
 
     print(f"NOTE: Setting data root to {args.data_root}")
     # Path to dataset
@@ -181,7 +185,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Train")
 
-    parser.add_argument("--config", type=str, required=True,
+    parser.add_argument("--config", type=str,
                         default="./configs/rtmdet/rtmdet_tiny_8xb32-300e_coco.py",
                         help="Path to model config file")
 
@@ -203,6 +207,9 @@ def main():
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Directory to save logs and models')
 
+    parser.add_argument('--batch_size', type=int, default=32,
+                        help='Directory to save logs and models')
+
     parser.add_argument('--launcher', choices=['none', 'pytorch', 'slurm', 'mpi'],
                         default='none', help='job launcher')
 
@@ -221,5 +228,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-print(".")

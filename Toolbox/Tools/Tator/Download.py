@@ -163,13 +163,13 @@ def download(args):
             frames = list(set([l.frame for l in localizations]))
             print(f"NOTE: Found {len(frames)} frames with localizations for media {media_name}")
 
+            # Subset based on what user directs
+            frames = [f for f_idx, f in enumerate(frames) if f_idx % args.every_n == 0]
+            print(f"NOTE: Sampled every {args.every_n} frames ({len(frames)}) w/ localizations for media {media_name}")
+
             if not frames or not localizations:
                 print("NOTE: No frames with localizations for this media")
                 continue
-
-            # Subsample the number of frames as directed by user;
-            # This will alter the total number of localizations too
-            frames = frames[::args.every_n]
 
             # Download the associated frames
             print(f"NOTE: Downloading {len(frames)} frames for {media_name}")
@@ -186,7 +186,10 @@ def download(args):
             annotations = []
 
             # Loop through each unique frame
-            for f_idx, frame in enumerate(list(set(frames))):
+            for f_idx, frame in enumerate(frames):
+
+                # if f_idx % args.every_n != 0:
+                #     continue
 
                 # Find the localizations
                 frame_localizations = [l for l in localizations if l.frame == frame]
@@ -206,7 +209,7 @@ def download(args):
                     ymax = int(h * Media.height) + ymin
 
                     # Frame number, localization id
-                    frame = frame_localization.frame
+                    frame_number = frame_localization.frame
                     localization_id = frame_localization.id
 
                     # For some reason, class categories are different...
@@ -229,7 +232,7 @@ def download(args):
                         media_name,
                         os.path.basename(paths[f_idx]),
                         paths[f_idx],
-                        frame,
+                        frame_number,
                         Media.width,
                         Media.height,
                         scientific,
@@ -300,8 +303,6 @@ def main():
 
     except Exception as e:
         print(f"ERROR: {e}")
-
-
 
 if __name__ == "__main__":
     main()
