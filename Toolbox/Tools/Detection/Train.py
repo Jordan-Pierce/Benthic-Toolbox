@@ -21,13 +21,20 @@ from mmdet.utils import setup_cache_size_limit_of_dynamo
 
 import datetime
 
-now = datetime.datetime.now()
-now = now.strftime("%Y-%m-%d_%H-%M-%S")
-
 
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
+def get_now():
+    """
+    :return:
+    """
+    # Get the current datetime
+    now = datetime.datetime.now()
+    now = now.strftime("%Y-%m-%d_%H-%M-%S")
+    return now
+
+
 
 def get_metainfo(class_map):
     """
@@ -97,14 +104,15 @@ def train(args):
 
     # Create the output folder
     output_dir = args.output_dir
-    work_dir = f"{output_dir}{now}_{config_name}\\"
+
+    work_dir = f"{output_dir}{get_now()}_{config_name}\\"
     os.makedirs(work_dir, exist_ok=True)
     cfg.work_dir = work_dir
 
     # Training parameters
     base_lr = args.lr
     val_interval = 1
-    max_epochs = args.max_epoch
+    max_epochs = args.max_epochs
     batch_size = args.batch_size
 
     print(f"NOTE: Setting training parameters")
@@ -147,6 +155,9 @@ def train(args):
     # Evaluators, make them the same
     cfg.val_evaluator['ann_file'] = f"{args.data_root}{valid_annotations}"
     cfg.test_evaluator['ann_file'] = f"{args.data_root}{test_annotations}"
+
+    print(f"NOTE: Setting up Tensorboard ")
+    cfg.visualizer['vis_backends'].append({'type': 'TensorboardVisBackend'})
 
     print("NOTE: Setting launcher")
     # Launcher
@@ -210,7 +221,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=32,
                         help='Number of samples to pass model in a single batch (GPU dependent')
 
-    parser.add_argument('--max_epochs', type=int, default=500,
+    parser.add_argument('--max_epochs', type=int, default=100,
                         help='Total number of times model sees every sample in training set')
 
     parser.add_argument('--lr', type=float, default=0.004,
