@@ -60,13 +60,16 @@ def train(args):
     # and improve training speed.
     setup_cache_size_limit_of_dynamo()
 
-    # Set the variables
-    if os.path.exists(args.annotations):
-        annotations = os.path.basename(args.annotations)
+    # Set the annotation files
+    if os.path.exists(args.train) and os.path.exists(args.valid) and os.path.exists(args.test):
+        train_annotations = os.path.basename(args.train)
+        valid_annotations = os.path.basename(args.valid)
+        test_annotations = os.path.basename(args.test)
     else:
-        print(f"ERROR: Annotation file does not exist; check input provided")
+        print(f"ERROR: The annotation files do no not exist; check input provided")
         sys.exit(1)
 
+    # Set the class map, and then create the metainfo
     if os.path.exists(args.class_map):
         with open(args.class_map, 'r') as input_file:
             class_map = json.load(input_file)
@@ -78,6 +81,7 @@ def train(args):
         print(f"ERROR: Annotation file does not exist; check input provided")
         sys.exit(1)
 
+    # Set the config file
     if os.path.exists(args.config):
         config_file = args.config
     else:
@@ -118,7 +122,7 @@ def train(args):
     cfg.train_cfg['val_interval'] = val_interval
     cfg.train_dataloader['batch_size'] = batch_size
     cfg.train_dataloader['dataset']['data_root'] = f"{args.data_root}"
-    cfg.train_dataloader['dataset']['ann_file'] = annotations
+    cfg.train_dataloader['dataset']['ann_file'] = train_annotations
     cfg.train_dataloader['dataset']['data_prefix'] = {'img': ''}
     cfg.train_dataloader['dataset']['metainfo'] = metainfo
 
@@ -126,18 +130,19 @@ def train(args):
     # Valid dataloader
     cfg.val_dataloader['batch_size'] = batch_size
     cfg.val_dataloader['dataset']['data_root'] = f"{args.data_root}"
-    cfg.val_dataloader['dataset']['ann_file'] = annotations
+    cfg.val_dataloader['dataset']['ann_file'] = valid_annotations
     cfg.val_dataloader['dataset']['data_prefix'] = {'img': ''}
     cfg.val_dataloader['dataset']['metainfo'] = metainfo
 
     print(f"NOTE: Creating test dataloader")
     # Test dataloader
     cfg.test_dataloader = cfg.val_dataloader
+    cfg.test_dataloader['dataset']['ann_file'] = test_annotations
 
     print(f"NOTE: Creating evaluators")
     # Evaluators, make them the same
-    cfg.val_evaluator['ann_file'] = f"{args.data_root}{annotations}"
-    cfg.test_evaluator = cfg.val_evaluator
+    cfg.val_evaluator['ann_file'] = f"{args.data_root}{valid_annotations}"
+    cfg.test_evaluator['ann_file'] = f"{args.data_root}{test_annotations}"
 
     print("NOTE: Setting launcher")
     # Launcher
@@ -176,20 +181,26 @@ def main():
 
     parser = argparse.ArgumentParser(description="Train")
 
-    parser.add_argument("--config", type=str,
+    parser.add_argument("--config", type=str, required=True,
                         default="./configs/rtmdet/rtmdet_tiny_8xb32-300e_coco.py",
                         help="Path to model config file")
 
-    parser.add_argument("--annotations", type=str,
+    parser.add_argument("--train", type=str, required=True,
                         help="Path to the COCO formatted annotations")
 
-    parser.add_argument("--class_map", type=str,
+    parser.add_argument("--valid", type=str, required=True,
+                        help="Path to the COCO formatted annotations")
+
+    parser.add_argument("--test", type=str, required=True,
+                        help="Path to the COCO formatted annotations")
+
+    parser.add_argument("--class_map", type=str, required=True,
                         help="Path to the Class Map JSON file")
 
-    parser.add_argument('--data_root', type=str,
+    parser.add_argument('--data_root', type=str, required=True,
                         help='Directory where all data is saved')
 
-    parser.add_argument('--output_dir', type=str,
+    parser.add_argument('--output_dir', type=str, required=True,
                         help='Directory to save logs and models')
 
     parser.add_argument('--launcher', choices=['none', 'pytorch', 'slurm', 'mpi'],

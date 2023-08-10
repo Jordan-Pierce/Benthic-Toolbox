@@ -167,6 +167,10 @@ def download(args):
                 print("NOTE: No frames with localizations for this media")
                 continue
 
+            # Subsample the number of frames as directed by user;
+            # This will alter the total number of localizations too
+            frames = frames[::args.every_n]
+
             # Download the associated frames
             print(f"NOTE: Downloading {len(frames)} frames for {media_name}")
             with ThreadPoolExecutor(max_workers=100) as executor:
@@ -281,8 +285,8 @@ def main():
     parser.add_argument("--media_ids", type=int, nargs='+',
                         help="ID for desired media(s)")
 
-    parser.add_argument("--human_made", type=bool, default=True,
-                        help="To download only ground truth by humans")
+    parser.add_argument("--every_n", type=int, default=1,
+                        help="Of frames with annotations, download every N")
 
     parser.add_argument("--output_dir", type=str,
                         default=f"{os.path.abspath('../../../Data/Ground_Truth/')}",
