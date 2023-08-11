@@ -7,6 +7,7 @@ import traceback
 import torch
 from mmdet.apis import DetInferencer
 
+
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
@@ -62,23 +63,26 @@ def inference(args):
         inferencer = DetInferencer(model=config,
                                    weights=checkpoint,
                                    palette='coco',
-                                   show_progress=False)
+                                   show_progress=True)
 
-        print("NOTE: Model loaded")
+        print(f"NOTE: Weights {os.path.basename(checkpoint)} loaded successfully")
 
     except Exception as e:
         print(f"ERROR: Could not load model\n{e}")
         sys.exit(1)
 
-    # Loop through all the images, make predictions, save output
-    for frame_path in frame_paths:
+    print(f"NOTE: Making predictors for {media_name}")
 
-        try:
-            result = inferencer(frame_path, out_dir=output_dir)
-            print(f"NOTE: Predictions made for {os.path.basename(frame_path)}")
-        except Exception as e:
-            print(f"ERROR: Could not make prediction on {os.path.basename(frame_path)}\n{e}")
-            traceback.print_exc()
+    try:
+        # Dict of predictions, and visualization
+        results = inferencer(frame_paths,
+                             out_dir=output_dir,
+                             no_save_pred=False,
+                             pred_score_thr=args.pred_threshold)
+
+    except Exception as e:
+        print(f"ERROR: Could not make prediction on {media_name}\n{e}")
+        traceback.print_exc()
 
 
 # -----------------------------------------------------------------------------
@@ -100,6 +104,9 @@ def main():
 
     parser.add_argument('--media_dir', type=str, required=True,
                         help='Directory where all the data is located')
+
+    parser.add_argument('--pred_threshold', type=float, default=0.25,
+                        help='Prediction confidence threshold')
 
     parser.add_argument('--output_dir', type=str,
                         default=os.path.abspath("../../../Data/Predictions/"),
