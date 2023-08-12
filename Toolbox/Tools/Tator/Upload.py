@@ -63,6 +63,7 @@ def upload(args):
         w = float(r['xmax'] - r['xmin']) / Media.width
         h = float(r['ymax'] - r['ymin']) / Media.height
 
+        # TODO update this for bounding box localization type
         frame = r['Frame']
         scientific = r['ScientificName']
         common = r['CommonName']

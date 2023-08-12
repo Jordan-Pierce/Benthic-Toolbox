@@ -188,9 +188,6 @@ def download(args):
             # Loop through each unique frame
             for f_idx, frame in enumerate(frames):
 
-                # if f_idx % args.every_n != 0:
-                #     continue
-
                 # Find the localizations
                 frame_localizations = [l for l in localizations if l.frame == frame]
 
@@ -245,21 +242,23 @@ def download(args):
                     # Add to list
                     annotations.append(annotation)
 
-            # Pandas dataframe
-            annotations = pd.DataFrame(annotations, columns=['Media', 'Image Name', 'Image Path',
-                                                             'Frame', 'Width', 'Height', 'Scientific Name',
-                                                             'xmin', 'ymin', 'xmax', 'ymax'])
-            # Output to media directory for later
-            print(f"NOTE: Saving {len(annotations)} annotations to {media_dir}")
-            annotations.to_csv(f"{media_dir}/annotations.csv")
+            if annotations:
 
-            if os.path.exists(f"{media_dir}/annotations.csv"):
-                print("NOTE: Annotations saved successfully")
-            else:
-                raise Exception
+                # Pandas dataframe
+                annotations = pd.DataFrame(annotations, columns=['Media', 'Image Name', 'Image Path',
+                                                                 'Frame', 'Width', 'Height', 'Scientific Name',
+                                                                 'xmin', 'ymin', 'xmax', 'ymax'])
+                # Output to media directory for later
+                print(f"NOTE: Saving {len(annotations)} annotations to {media_dir}")
+                annotations.to_csv(f"{media_dir}/annotations.csv")
 
-            # Plot data summaries
-            plot_distributions(annotations, media_dir, media_name)
+                if os.path.exists(f"{media_dir}/annotations.csv"):
+                    print("NOTE: Annotations saved successfully")
+                else:
+                    raise Exception
+
+                # Plot data summaries
+                plot_distributions(annotations, media_dir, media_name)
 
         except Exception as e:
             print(f"ERROR: Could not finish collecting media {media_id} from Tator")

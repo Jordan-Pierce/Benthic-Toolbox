@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import argparse
 import traceback
@@ -104,10 +105,15 @@ def train(args):
 
     # Create the output folder
     output_dir = args.output_dir
-
     work_dir = f"{output_dir}{get_now()}_{config_name}\\"
     os.makedirs(work_dir, exist_ok=True)
     cfg.work_dir = work_dir
+
+    # Save dataset json files for posterity
+    shutil.copy(args.class_map, f'{work_dir}{os.path.basename(args.class_map)}')
+    shutil.copy(args.train, f'{work_dir}{os.path.basename(args.train)}')
+    shutil.copy(args.valid, f'{work_dir}{os.path.basename(args.valid)}')
+    shutil.copy(args.test, f'{work_dir}{os.path.basename(args.test)}')
 
     # Training parameters
     base_lr = args.lr
@@ -118,6 +124,7 @@ def train(args):
     print(f"NOTE: Setting training parameters")
     cfg.max_epochs = max_epochs
     cfg.default_hooks['checkpoint']['interval'] = val_interval
+    cfg.default_hooks['checkpoint']['max_keep_ckpts'] = args.max_epochs
     cfg.optim_wrapper['optimizer']['lr'] = base_lr
 
     print(f"NOTE: Setting data root to {args.data_root}")
@@ -197,7 +204,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train")
 
     parser.add_argument("--config", type=str,
-                        default="./configs/rtmdet/rtmdet_tiny_8xb32-300e_coco.py",
+                        default="./configs/rtmdet/rtmdet_m_8xb32-300e_coco.py",
                         help="Path to model config file")
 
     parser.add_argument("--train", type=str, required=True,
@@ -218,10 +225,10 @@ def main():
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Directory to save logs and models')
 
-    parser.add_argument('--batch_size', type=int, default=32,
+    parser.add_argument('--batch_size', type=int, default=16,
                         help='Number of samples to pass model in a single batch (GPU dependent')
 
-    parser.add_argument('--max_epochs', type=int, default=100,
+    parser.add_argument('--max_epochs', type=int, default=50,
                         help='Total number of times model sees every sample in training set')
 
     parser.add_argument('--lr', type=float, default=0.004,

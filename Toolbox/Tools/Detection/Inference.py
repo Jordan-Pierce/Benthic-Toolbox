@@ -6,6 +6,7 @@ import argparse
 import traceback
 
 import pandas as pd
+
 import torch
 from mmdet.apis import DetInferencer
 
@@ -59,6 +60,10 @@ def merge_predictions(prediction_paths, class_map, output_dir):
     print(f"NOTE: Merged predictions saved to {os.path.basename(predictions_path)}")
 
 
+def create_gif(file_paths, output_dir):
+    pass
+
+
 def inference(args):
     """
 
@@ -68,7 +73,8 @@ def inference(args):
     # Check that config file exists
     if os.path.exists(args.config):
         config = args.config
-        print(f"NOTE: Using config file {os.path.basename(config)}")
+        config_name = os.path.basename(config)
+        print(f"NOTE: Using config file {config_name}")
     else:
         print(f"ERROR: Config file doesn't exist; please check input")
         sys.exit(1)
@@ -76,7 +82,8 @@ def inference(args):
     # Check that checkpoint is there
     if os.path.exists(args.checkpoint):
         checkpoint = args.checkpoint
-        print(f"NOTE: Using checkpoint file {os.path.basename(checkpoint)}")
+        checkpoint_name = os.path.basename(checkpoint)
+        print(f"NOTE: Using checkpoint file {checkpoint_name}")
     else:
         print(f"ERROR: Checkpoint file doesn't exist; please check input")
         sys.exit(1)
@@ -110,7 +117,7 @@ def inference(args):
         sys.exit(1)
 
     # Output directory
-    output_dir = f"{args.output_dir}\\{media_name}\\"
+    output_dir = f"{args.output_dir}\\{media_name}_{config_name}_{checkpoint_name}\\"
     os.makedirs(output_dir, exist_ok=True)
 
     # Either GPU or CPU
@@ -130,17 +137,19 @@ def inference(args):
         print(f"ERROR: Could not load model\n{e}")
         sys.exit(1)
 
-    print(f"NOTE: Making predictions for {media_name}")
-
     try:
+        print(f"NOTE: Making predictions for {media_name}")
         # Dict of predictions, and visualization
-        results = inferencer(frame_paths[::100],
+        results = inferencer(frame_paths,
                              out_dir=output_dir,
                              no_save_pred=False,
                              pred_score_thr=args.pred_threshold)
 
-        print(f"NOTE: Made predictions for {media_name}")
+        print(f"NOTE: Merging predictions")
         merge_predictions(glob.glob(f"{output_dir}preds\\*.json"), class_map, output_dir)
+
+        print(f"NOTE: Making predictions GIF")
+        create_gif(glob.glob(f"{output_dir}vis\\*.jpg"), output_dir)
 
     except Exception as e:
         print(f"ERROR: Could not make prediction on {media_name}\n{e}")
