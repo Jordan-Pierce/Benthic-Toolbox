@@ -22,7 +22,7 @@ from mmdet.utils import setup_cache_size_limit_of_dynamo
 
 import datetime
 
-# TODO do you need data root?
+
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
@@ -34,7 +34,6 @@ def get_now():
     now = datetime.datetime.now()
     now = now.strftime("%Y-%m-%d_%H-%M-%S")
     return now
-
 
 
 def get_metainfo(class_map):
@@ -204,7 +203,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train")
 
     parser.add_argument("--config", type=str,
-                        default="./configs/rtmdet/rtmdet_m_8xb32-300e_coco.py",
+                        default="./configs/rtmdet/rtmdet_tiny_8xb32-300e_coco.py",
                         help="Path to model config file")
 
     parser.add_argument("--train", type=str, required=True,
@@ -225,7 +224,7 @@ def main():
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Directory to save logs and models')
 
-    parser.add_argument('--batch_size', type=int, default=16,
+    parser.add_argument('--batch_size', type=int, default=32,
                         help='Number of samples to pass model in a single batch (GPU dependent')
 
     parser.add_argument('--max_epochs', type=int, default=30,

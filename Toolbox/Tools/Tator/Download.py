@@ -29,9 +29,9 @@ def plot_distributions(annotations, media_dir, media_name):
 
     # Output a data distribution chart
     plt.figure(figsize=(20, 20))
-    annotations['Scientific Name'].value_counts().plot(kind='bar')
+    annotations['ScientificName'].value_counts().plot(kind='bar')
     plt.title(f"{media_name}")
-    plt.savefig(f"{media_dir}/Scientific Name.png")
+    plt.savefig(f"{media_dir}/ScientificName.png")
     plt.close()
 
 
