@@ -47,7 +47,7 @@ def upload(args):
     try:
         # The type of localization for the project (bounding box, attributes)
         loc_type = api.get_localization_type_list(project_id)
-        loc_type = [loc for loc in loc_type if loc.name == 'Detection Box'][0]
+        loc_type = [loc for loc in loc_type if loc.id == 440][0]
     except Exception as e:
         print(f"ERROR: Could not find the correct localization type in project {project_id}")
         sys.exit(1)
@@ -63,14 +63,10 @@ def upload(args):
         w = float(r['xmax'] - r['xmin']) / Media.width
         h = float(r['ymax'] - r['ymin']) / Media.height
 
-        # TODO update this for bounding box localization type
+        # Based on localization 440 - Detection
         frame = r['Frame']
-        scientific = r['ScientificName']
-        common = r['CommonName']
-
-        # For detections, might change to bounding boxes
-        species = scientific if scientific else common
-        confidence = 1.0
+        label = r['Label']
+        score = r['Score']
 
         # Standard spec for this bounding box
         spec = {
@@ -81,10 +77,11 @@ def upload(args):
             'width': w,
             'height': h,
             'frame': frame,
-            'ScientificName': scientific,
-            'CommonName': common,
-            'Species': species,
-            'Confidence': confidence
+            'ScientificName': "",
+            'CommonName': "",
+            'Notes': "",
+            'Needs Review': True,
+            'Score': score
         }
 
         # Add to list

@@ -73,7 +73,7 @@ def inference(args):
     # Check that config file exists
     if os.path.exists(args.config):
         config = args.config
-        config_name = os.path.basename(config)
+        config_name = os.path.basename(config).split(".")[0]
         print(f"NOTE: Using config file {config_name}")
     else:
         print(f"ERROR: Config file doesn't exist; please check input")
@@ -82,7 +82,7 @@ def inference(args):
     # Check that checkpoint is there
     if os.path.exists(args.checkpoint):
         checkpoint = args.checkpoint
-        checkpoint_name = os.path.basename(checkpoint)
+        checkpoint_name = os.path.basename(checkpoint).split(".")[0]
         print(f"NOTE: Using checkpoint file {checkpoint_name}")
     else:
         print(f"ERROR: Checkpoint file doesn't exist; please check input")

@@ -22,7 +22,7 @@ from mmdet.utils import setup_cache_size_limit_of_dynamo
 
 import datetime
 
-
+# TODO do you need data root?
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
@@ -228,7 +228,7 @@ def main():
     parser.add_argument('--batch_size', type=int, default=16,
                         help='Number of samples to pass model in a single batch (GPU dependent')
 
-    parser.add_argument('--max_epochs', type=int, default=50,
+    parser.add_argument('--max_epochs', type=int, default=30,
                         help='Total number of times model sees every sample in training set')
 
     parser.add_argument('--lr', type=float, default=0.004,

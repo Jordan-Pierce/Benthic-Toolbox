@@ -13,7 +13,7 @@ from matplotlib.patches import Rectangle
 # ------------------------------------------------------------------------------------------------------------------
 
 
-def plot_coco_samples(coco_file, color_map, output_dir, n_images=5, seed=None):
+def plot_coco_samples(coco_file, output_dir, n_images=5, seed=None):
     """
     :param coco_annotations_file:
     :param output_dir:
@@ -146,7 +146,7 @@ def to_coco(annotations, class_mapping, coco_file):
             data_anno = dict(
                 image_id=i_idx,
                 id=a_idx,
-                category_id=class_mapping[r['Scientific Name']],
+                category_id=class_mapping[r['ScientificName']],
                 bbox=[xmin, ymin, xmax - xmin, ymax - ymin],
                 segmentation=[mask_polygon],
                 area=(xmax - xmin) * (ymax - ymin),
@@ -202,17 +202,22 @@ def coco(args):
     valid_annotations = concat_annotations(args.valid_files)
     test_annotations = concat_annotations(args.test_files)
 
-    # Single object detector
-    if args.single_object_detector:
-        train_annotations['Scientific Name'] = 'Object'
-        valid_annotations['Scientific Name'] = 'Object'
-        test_annotations['Scientific Name'] = 'Object'
+    # Filter based on list
+    if args.only_include:
+        train_annotations = train_annotations[train_annotations['ScientificName'].isin(args.only_include)]
+        valid_annotations = valid_annotations[valid_annotations['ScientificName'].isin(args.only_include)]
+        test_annotations = test_annotations[test_annotations['ScientificName'].isin(args.only_include)]
+    # Single object detector (both could be used)
+    elif args.single_object_detector:
+        train_annotations['ScientificName'] = 'Object'
+        valid_annotations['ScientificName'] = 'Object'
+        test_annotations['ScientificName'] = 'Object'
 
     # Combine
     annotations = pd.concat((train_annotations, valid_annotations, test_annotations))
 
     # Create a class mapping for category id (this means all annotation files must be added)
-    class_mapping = {v: i for i, v in enumerate(annotations['Scientific Name'].unique())}
+    class_mapping = {v: i for i, v in enumerate(annotations['ScientificName'].unique())}
 
     # Create COCO format annotations for each of the datasets
     train_coco = to_coco(train_annotations, class_mapping, train_file)
@@ -234,9 +239,9 @@ def coco(args):
     # Plot samples in ground-truth directory
     if args.plot_n_samples:
         n_samples = args.plot_n_samples
-        plot_coco_samples(train_coco, class_map_file,  f"{output_dir}\\plots\\", n_samples)
-        plot_coco_samples(valid_coco, class_map_file, f"{output_dir}\\plots\\", n_samples)
-        plot_coco_samples(test_coco, class_map_file, f"{output_dir}\\plots\\", n_samples)
+        plot_coco_samples(train_coco, f"{output_dir}\\plots\\", n_samples)
+        plot_coco_samples(valid_coco, f"{output_dir}\\plots\\", n_samples)
+        plot_coco_samples(test_coco, f"{output_dir}\\plots\\", n_samples)
 
 
 # -----------------------------------------------------------------------------
@@ -262,11 +267,14 @@ def main():
     parser.add_argument("--single_object_detector", action='store_true',
                         help="All labels are replaced with a single class category")
 
+    parser.add_argument("--only_include", type=str, nargs="+",
+                        help="A list of class categories to use, others filtered out")
+
     parser.add_argument("--plot_n_samples", type=int, default=5,
                         help="Plot N samples to show COCO labels on images")
 
     parser.add_argument("--output_dir", type=str,
-                        default=f"{os.path.abspath('../../../Data/Ground_Truth/')}",
+                        default=f"{os.path.abspath('../../../Data/COCO/')}",
                         help="Path to the output directory.")
 
     args = parser.parse_args()

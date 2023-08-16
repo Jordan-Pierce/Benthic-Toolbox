@@ -246,7 +246,7 @@ def download(args):
 
                 # Pandas dataframe
                 annotations = pd.DataFrame(annotations, columns=['Media', 'Image Name', 'Image Path',
-                                                                 'Frame', 'Width', 'Height', 'Scientific Name',
+                                                                 'Frame', 'Width', 'Height', 'ScientificName',
                                                                  'xmin', 'ymin', 'xmax', 'ymax'])
                 # Output to media directory for later
                 print(f"NOTE: Saving {len(annotations)} annotations to {media_dir}")
