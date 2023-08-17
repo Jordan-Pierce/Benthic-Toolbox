@@ -5,6 +5,7 @@ import argparse
 import traceback
 from tqdm import tqdm
 
+import json
 import tator
 import pandas as pd
 from PIL import Image
@@ -32,6 +33,13 @@ def plot_distributions(annotations, media_dir, media_name):
     annotations['ScientificName'].value_counts().plot(kind='bar')
     plt.title(f"{media_name}")
     plt.savefig(f"{media_dir}/ScientificName.png")
+    plt.close()
+
+    # Output a data distribution chart
+    plt.figure(figsize=(20, 20))
+    annotations['Mapped'].value_counts().plot(kind='bar')
+    plt.title(f"{media_name}")
+    plt.savefig(f"{media_dir}/Mapped.png")
     plt.close()
 
 
@@ -118,6 +126,15 @@ def download(args):
 
     except Exception as e:
         print(f"ERROR: Could not authenticate with provided API Token\n{e}")
+        sys.exit(1)
+
+    # Get the label map
+    if os.path.exists(args.label_map):
+        # Open label map as dict
+        with open(args.label_map, 'r') as json_file:
+            label_map = json.load(json_file)
+    else:
+        print("ERROR: Label map file provided doesn't exist; please check input")
         sys.exit(1)
 
     # Pass the project and media list to variables
@@ -209,7 +226,7 @@ def download(args):
                     frame_number = frame_localization.frame
                     localization_id = frame_localization.id
 
-                    # For some reason, class categories are different...
+                    # Legacy attribute name...
                     if 'Scientific Name' in frame_localization.attributes:
                         s = 'Scientific Name'
                     elif 'ScientificName' in frame_localization.attributes:
@@ -219,10 +236,23 @@ def download(args):
 
                     # Get the actual scientific name
                     if s in frame_localization.attributes:
-                        scientific = frame_localization.attributes[s]
+
+                        # Make sure it's a string
+                        scientific = str(frame_localization.attributes[s])
+
+                        # If it doesn't have an actual label...
+                        if scientific.lower() in ['0', '', ' ', 'unlabeled' 'undefined']:
+                            scientific = "No Label"
                     else:
                         print(f"WARNING: Frame {frame} localization {localization_id} has no label!")
-                        scientific = "Unlabeled"
+                        scientific = "No Label"
+
+                    try:
+                        # Get the benthic mapped label
+                        # CommonName use is inconsistent...
+                        mapped = label_map[scientific]
+                    except:
+                        mapped = "No Label"
 
                     # Row in dataframe
                     annotation = [
@@ -233,6 +263,7 @@ def download(args):
                         Media.width,
                         Media.height,
                         scientific,
+                        mapped,
                         xmin,
                         ymin,
                         xmax,
@@ -246,7 +277,8 @@ def download(args):
 
                 # Pandas dataframe
                 annotations = pd.DataFrame(annotations, columns=['Media', 'Image Name', 'Image Path',
-                                                                 'Frame', 'Width', 'Height', 'ScientificName',
+                                                                 'Frame', 'Width', 'Height',
+                                                                 'ScientificName', 'Mapped',
                                                                  'xmin', 'ymin', 'xmax', 'ymax'])
                 # Output to media directory for later
                 print(f"NOTE: Saving {len(annotations)} annotations to {media_dir}")
@@ -289,6 +321,10 @@ def main():
 
     parser.add_argument("--every_n", type=int, default=1,
                         help="Of frames with annotations, download every N")
+
+    parser.add_argument("--label_map", type=str,
+                        default=f"{os.path.abspath('../../../Data/benthic_label_map.json')}",
+                        help="Path to label map file")
 
     parser.add_argument("--output_dir", type=str,
                         default=f"{os.path.abspath('../../../Data/Ground_Truth/')}",

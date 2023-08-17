@@ -104,7 +104,7 @@ def concat_annotations(annotation_files):
     return annotations
 
 
-def to_coco(annotations, class_mapping, coco_file):
+def to_coco(annotations, column_name, class_mapping, coco_file):
     """
     :param annotations:
     :param class_map:
@@ -154,7 +154,7 @@ def to_coco(annotations, class_mapping, coco_file):
             data_anno = dict(
                 image_id=i_idx,
                 id=a_idx,
-                category_id=class_mapping[r['ScientificName']],
+                category_id=class_mapping[r[column_name]],
                 bbox=[xmin, ymin, xmax - xmin, ymax - ymin],
                 segmentation=[mask_polygon],
                 area=(xmax - xmin) * (ymax - ymin),
@@ -193,6 +193,13 @@ def coco(args):
     print("Converting to COCO")
     print("###############################################\n")
 
+    # Make sure column name is correct before proceeding
+    if args.column_name in ['ScientificName', 'Mapped']:
+        column_name = args.column_name
+    else:
+        print(f"ERROR: Column name is incorrect; check input provided")
+        sys.exit(1)
+
     # Set the variables
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
@@ -212,32 +219,33 @@ def coco(args):
 
     # Filter based on list
     if args.only_include:
-        train_annotations = train_annotations[train_annotations['ScientificName'].isin(args.only_include)]
-        valid_annotations = valid_annotations[valid_annotations['ScientificName'].isin(args.only_include)]
-        test_annotations = test_annotations[test_annotations['ScientificName'].isin(args.only_include)]
+        train_annotations = train_annotations[train_annotations[column_name].isin(args.only_include)]
+        valid_annotations = valid_annotations[valid_annotations[column_name].isin(args.only_include)]
+        test_annotations = test_annotations[test_annotations[column_name].isin(args.only_include)]
+
     # Single object detector (both could be used)
-    elif args.single_object_detector:
-        train_annotations['ScientificName'] = 'Object'
-        valid_annotations['ScientificName'] = 'Object'
-        test_annotations['ScientificName'] = 'Object'
+    if args.single_object_detector:
+        train_annotations[column_name] = 'Object'
+        valid_annotations[column_name] = 'Object'
+        test_annotations[column_name] = 'Object'
 
     # Combine
     annotations = pd.concat((train_annotations, valid_annotations, test_annotations))
 
     # Create a class mapping for category id (this means all annotation files must be added)
-    class_mapping = {v: i for i, v in enumerate(annotations['ScientificName'].unique())}
+    class_mapping = {v: i for i, v in enumerate(annotations[column_name].unique())}
 
     # Create COCO format annotations for each of the datasets
-    train_coco = to_coco(train_annotations, class_mapping, train_file)
-    valid_coco = to_coco(valid_annotations, class_mapping, valid_file)
-    test_coco = to_coco(test_annotations, class_mapping, test_file)
+    train_coco = to_coco(train_annotations, column_name, class_mapping, train_file)
+    valid_coco = to_coco(valid_annotations, column_name, class_mapping, valid_file)
+    test_coco = to_coco(test_annotations, column_name, class_mapping, test_file)
 
     # Updated class mapping file as expected by training script
-    categories = [{'id': class_id, 'name': class_name} for class_name, class_id in class_mapping.items()]
+    class_mapping = [{'id': class_id, 'name': class_name} for class_name, class_id in class_mapping.items()]
 
     # Write the JSON data to the output file
     with open(class_map_file, 'w') as output_file:
-        json.dump(categories, output_file, indent=3)
+        json.dump(class_mapping, output_file, indent=3)
 
     if os.path.exists(class_map_file):
         print(f"NOTE: Class Map JSON file saved to {class_map_file}")
@@ -272,13 +280,16 @@ def main():
     parser.add_argument("--test_files", type=str, nargs="+",
                         help="Path to the testing annotation files")
 
+    parser.add_argument("--column_name", type=str, default='Mapped',
+                        help="Label column to use; either ScientificName or Mapped")
+
     parser.add_argument("--single_object_detector", action='store_true',
                         help="All labels are replaced with a single class category")
 
     parser.add_argument("--only_include", type=str, nargs="+",
                         help="A list of class categories to use, others filtered out")
 
-    parser.add_argument("--plot_n_samples", type=int, default=100,
+    parser.add_argument("--plot_n_samples", type=int, default=15,
                         help="Plot N samples to show COCO labels on images")
 
     parser.add_argument("--output_dir", type=str,

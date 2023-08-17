@@ -31,6 +31,13 @@ def plot_distributions(annotations, media_dir, media_name):
     plt.savefig(f"{media_dir}/ScientificName.png")
     plt.close()
 
+    # Output a data distribution chart
+    plt.figure(figsize=(20, 20))
+    annotations['Mapped'].value_counts().plot(kind='bar')
+    plt.title(f"{media_name}")
+    plt.savefig(f"{media_dir}/Mapped.png")
+    plt.close()
+
 
 def download_file(url, path):
     """
@@ -136,8 +143,15 @@ def from_json(args):
         for b in d['boundingBoxes']:
 
             try:
-                # Scientific name mapped; if it doesn't exist, skipped
-                scientific = label_map[b['concept']]
+
+                # Scientific name
+                scientific = b['concept']
+
+                # Provided with the benthic label map
+                try:
+                    mapped = label_map[scientific]
+                except:
+                    mapped = "No Label"
 
                 # bbox
                 xmin = b['x']
@@ -147,14 +161,16 @@ def from_json(args):
 
                 # Add to list, each is a row in dataframe
                 annotations.append([media_name, image_name, image_path, frame, width, height,
-                                    scientific, xmin, ymin, xmax, ymax])
+                                    scientific, mapped,
+                                    xmin, ymin, xmax, ymax])
 
             except Exception as e:
                 print(f"WARNING: {e}")
 
     # Pandas dataframe
     annotations = pd.DataFrame(annotations, columns=['Media', 'Image Name', 'Image Path',
-                                                     'Frame', 'Width', 'Height', 'ScientificName',
+                                                     'Frame', 'Width', 'Height',
+                                                     'ScientificName', 'Mapped',
                                                      'xmin', 'ymin', 'xmax', 'ymax'])
     # Output to media directory for later
     print(f"NOTE: Saving {len(annotations)} annotations to {media_dir}")
@@ -206,6 +222,7 @@ def main():
                         help="Path to json file")
 
     parser.add_argument("--label_map", type=str,
+                        default=f"{os.path.abspath('../../../Data/benthic_label_map.json')}",
                         help="Path to label map file")
 
     parser.add_argument("--media_dir", type=str,
