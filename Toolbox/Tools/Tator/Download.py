@@ -156,8 +156,8 @@ def download(args):
         try:
             # Name used for output
             Media = api.get_media(media_id)
-            media_name = Media.name.replace(":", "__").split(".")[0]
-            media_dir = f"{output_dir}/{media_name}/"
+            media_name = Media.name
+            media_dir = f"{output_dir}/{media_id}/"
             os.makedirs(media_dir, exist_ok=True)
 
             print(f"NOTE: Media ID {media_id} corresponds to {Media.name}")
@@ -256,7 +256,7 @@ def download(args):
 
                     # Row in dataframe
                     annotation = [
-                        media_name,
+                        media_id,
                         os.path.basename(paths[f_idx]),
                         paths[f_idx],
                         frame_number,

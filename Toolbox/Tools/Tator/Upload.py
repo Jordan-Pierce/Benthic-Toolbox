@@ -65,8 +65,10 @@ def upload(args):
 
         # Based on localization 440 - Detection
         frame = r['Frame']
-        label = r['Label']
         score = r['Score']
+
+        # TODO figure this one out
+        label = r['Label']
 
         # Standard spec for this bounding box
         spec = {
