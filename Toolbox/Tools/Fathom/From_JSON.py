@@ -2,11 +2,16 @@ import os
 import sys
 import argparse
 import requests
+import traceback
+
+from concurrent.futures import as_completed
 from concurrent.futures import ThreadPoolExecutor
 
 import json
 import pandas as pd
 import matplotlib.pyplot as plt
+
+from fathomnet.api import images
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -57,17 +62,23 @@ def download_file(url, path):
         return None
 
 
-def converter(args):
+def from_json(args):
     """
 
     :param args:
     :return:
     """
+    print("\n###############################################")
+    print("Converting from JSON")
+    print("###############################################\n")
 
     if os.path.exists(args.json_file):
         # Open json file as dict
         with open(args.json_file, 'r') as json_file:
             data = json.load(json_file)
+        # Change if needed
+        if type(data) != list:
+            data = [v for k, v in data.items()]
     else:
         print("ERROR: JSON file provided doesn't exist; please check input")
         sys.exit(1)
@@ -117,6 +128,10 @@ def converter(args):
         # List to download later
         image_urls.append([image_url, image_path])
 
+        # If for some reason
+        if 'boundingBoxes' not in d:
+            continue
+
         # Loop though each bounding box, map class label
         for b in d['boundingBoxes']:
 
@@ -157,10 +172,12 @@ def converter(args):
     frames = []
 
     with ThreadPoolExecutor(max_workers=100) as executor:
-        for url, path in image_urls:
-            frame = executor.submit(download_file, url, path).result()
-            if frame:
-                frames.append(frame)
+        futures = [executor.submit(download_file, url, path) for url, path in image_urls]
+
+        for future in as_completed(futures):
+            downloaded_path = future.result()
+            if downloaded_path:
+                frames.append(downloaded_path)
 
     # Pandas dataframe
     frames = pd.DataFrame(frames, columns=['Name'])
@@ -197,11 +214,12 @@ def main():
     args = parser.parse_args()
 
     try:
-        converter(args)
+        from_json(args)
         print("Done.")
 
     except Exception as e:
         print(f"ERROR: {e}")
+        print(traceback.print_exc())
 
 
 if __name__ == "__main__":

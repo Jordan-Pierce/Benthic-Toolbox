@@ -4,7 +4,10 @@ import argparse
 
 import json
 import random
+from tqdm import tqdm
+
 import pandas as pd
+from PIL import Image
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
@@ -13,7 +16,7 @@ from matplotlib.patches import Rectangle
 # ------------------------------------------------------------------------------------------------------------------
 
 
-def plot_coco_samples(coco_file, output_dir, n_images=5, seed=None):
+def plot_coco_samples(coco_file, output_dir, prefix, n_images=5, seed=None):
     """
     :param coco_annotations_file:
     :param output_dir:
@@ -65,10 +68,10 @@ def plot_coco_samples(coco_file, output_dir, n_images=5, seed=None):
             plt.gca().add_patch(bbox_rect)
 
         plt.axis('off')
-        plt.title(f"Image ID: {img_id}")
+        plt.title(f"{prefix} ID: {img_id}")
 
         # Save the plot
-        output_file = os.path.join(output_dir, f"image_{img_id}.png")
+        output_file = os.path.join(output_dir, f"{prefix}_image_{img_id}.png")
         plt.savefig(output_file, bbox_inches='tight', pad_inches=0.1)
         plt.close()
 
@@ -118,7 +121,7 @@ def to_coco(annotations, class_mapping, coco_file):
     objects = []
 
     # Loop through first based on unique images
-    for i_idx, image_name in enumerate(annotations['Image Name'].unique()):
+    for i_idx, image_name in tqdm(enumerate(annotations['Image Name'].unique())):
 
         # Get the current annotations for the image
         current_annotations = annotations[annotations['Image Name'] == image_name]
@@ -132,13 +135,18 @@ def to_coco(annotations, class_mapping, coco_file):
                 height = r['Height']
                 width = r['Width']
 
+                # Because fathomnet is wrong...
+                w, h = Image.open(img_path).size
+                x_off = (w - width) // 2
+                y_off = (h - height) // 2
+
                 images.append(dict(id=i_idx, file_name=img_path, height=height, width=width))
 
             # Bounding box
-            xmin = r['xmin']
-            ymin = r['ymin']
-            xmax = r['xmax']
-            ymax = r['ymax']
+            xmin = r['xmin'] + x_off
+            ymin = r['ymin'] + y_off
+            xmax = r['xmax'] + x_off
+            ymax = r['ymax'] + y_off
 
             # Instance segmentation mask as polygon (list of vertices representing a rectangle)
             mask_polygon = [xmin, ymin, xmin, ymax, xmax, ymax, xmax, ymin]
@@ -239,9 +247,9 @@ def coco(args):
     # Plot samples in ground-truth directory
     if args.plot_n_samples:
         n_samples = args.plot_n_samples
-        plot_coco_samples(train_coco, f"{output_dir}\\plots\\", n_samples)
-        plot_coco_samples(valid_coco, f"{output_dir}\\plots\\", n_samples)
-        plot_coco_samples(test_coco, f"{output_dir}\\plots\\", n_samples)
+        plot_coco_samples(train_coco, f"{output_dir}\\plots\\", "Train", n_samples)
+        plot_coco_samples(valid_coco, f"{output_dir}\\plots\\", "Valid", n_samples)
+        plot_coco_samples(test_coco, f"{output_dir}\\plots\\", "Test", n_samples)
 
 
 # -----------------------------------------------------------------------------
@@ -270,7 +278,7 @@ def main():
     parser.add_argument("--only_include", type=str, nargs="+",
                         help="A list of class categories to use, others filtered out")
 
-    parser.add_argument("--plot_n_samples", type=int, default=5,
+    parser.add_argument("--plot_n_samples", type=int, default=100,
                         help="Plot N samples to show COCO labels on images")
 
     parser.add_argument("--output_dir", type=str,

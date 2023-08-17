@@ -60,16 +60,15 @@ def merge_predictions(prediction_paths, class_map, output_dir):
     print(f"NOTE: Merged predictions saved to {os.path.basename(predictions_path)}")
 
 
-def create_gif(file_paths, output_dir):
-    pass
-
-
 def inference(args):
     """
 
     :param args:
     :return:
     """
+    print("\n###############################################")
+    print("Inference")
+    print("###############################################\n")
     # Check that config file exists
     if os.path.exists(args.config):
         config = args.config
@@ -147,9 +146,6 @@ def inference(args):
 
         print(f"NOTE: Merging predictions")
         merge_predictions(glob.glob(f"{output_dir}preds\\*.json"), class_map, output_dir)
-
-        print(f"NOTE: Making predictions GIF")
-        create_gif(glob.glob(f"{output_dir}vis\\*.jpg"), output_dir)
 
     except Exception as e:
         print(f"ERROR: Could not make prediction on {media_name}\n{e}")
