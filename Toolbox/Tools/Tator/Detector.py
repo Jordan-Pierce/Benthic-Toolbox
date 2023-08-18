@@ -237,6 +237,8 @@ def detector(args):
 
                 if args.show_video:
 
+                    video_name = f"{media.name}: {f_idx}%"
+
                     try:
                         # Add predictions to frame
                         visualizer.add_datasample(
