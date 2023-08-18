@@ -207,16 +207,16 @@ def detector(args):
                     # Tator format of bounding boxes
                     x = float(xmin / video_reader.width)
                     y = float(ymin / video_reader.height)
-                    w = float(xmax - xmax) / video_reader.width
-                    h = float(ymax - ymax) / video_reader.height
+                    w = float((xmax - xmax) / video_reader.width)
+                    h = float((ymax - ymax) / video_reader.height)
 
                     # TODO figure this one out
                     label = class_map[labels[i_idx]]
-                    score = scores[i_idx]
+                    score = float(scores[i_idx])
 
                     # For tator upload
                     loc = {'type': loc_type.id,
-                           'media_id': media_id,
+                           'media_id': media.id,
                            'x': x,
                            'y': y,
                            'width': w,
@@ -294,7 +294,7 @@ def detector(args):
             num_created = 0
             for response in tator.util.chunked_create(api.create_localization_list,
                                                       project_id,
-                                                      localization_spec=localizations):
+                                                      body=localizations):
                 num_created += len(response.id)
             print(f"NOTE: Successfully created {num_created} localizations on {media.name}!")
 
