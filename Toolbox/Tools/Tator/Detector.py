@@ -7,7 +7,6 @@ import argparse
 import cv2
 import torch
 import tator
-import numpy as np
 import pandas as pd
 
 import mmcv
@@ -201,7 +200,7 @@ def detector(args):
 
                     # TODO figure this one out
                     label = class_map[labels[i_idx]]
-                    score = float(np.around(scores[i_idx]), 3)
+                    score = round(float(scores[i_idx]), 3)
 
                     if score < args.pred_threshold:
                         continue
@@ -226,11 +225,13 @@ def detector(args):
                            'width': w,
                            'height': h,
                            'frame': f_idx,
-                           'ScientificName': "",
-                           'CommonName': "",
-                           'Notes': "",
-                           'Needs Review': True,
-                           'Score': score}
+                           'attributes': {
+                               'ScientificName': "",
+                               'CommonName': "",
+                               'Notes': "",
+                               'Needs Review': True,
+                               'Score': score}
+                           }
 
                     # For local archive
                     pred = [f_idx, label, score, xmin, ymin, xmax, ymax]
