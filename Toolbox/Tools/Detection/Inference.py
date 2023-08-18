@@ -69,32 +69,45 @@ def inference(args):
     print("\n###############################################")
     print("Inference")
     print("###############################################\n")
+
     # Check that config file exists
-    if os.path.exists(args.config):
-        config = args.config
+    if os.path.exists(args.run_dir):
+        run_dir = f"{args.run_dir}\\"
+        run_name = os.path.dirname(run_dir).split("\\")[-1]
+        print(f"NOTE: Using run {run_name}")
+    else:
+        print(f"ERROR: Run directory doesn't exist; please check input")
+        sys.exit(1)
+
+    try:
+        # Find the config file
+        config = glob.glob(f"{run_dir}*.py")[0]
         config_name = os.path.basename(config).split(".")[0]
         print(f"NOTE: Using config file {config_name}")
-    else:
+    except:
         print(f"ERROR: Config file doesn't exist; please check input")
         sys.exit(1)
 
-    # Check that checkpoint is there
-    if os.path.exists(args.checkpoint):
-        checkpoint = args.checkpoint
+    try:
+        # Find the checkpoint file
+        checkpoints = glob.glob(f"{run_dir}*.pth")
+        checkpoint = [c for c in checkpoints if os.path.basename(c) == f'epoch_{args.epoch}.pth'][0]
         checkpoint_name = os.path.basename(checkpoint).split(".")[0]
         print(f"NOTE: Using checkpoint file {checkpoint_name}")
-    else:
+    except:
         print(f"ERROR: Checkpoint file doesn't exist; please check input")
         sys.exit(1)
 
-    # Class map json file
-    if os.path.exists(args.class_map):
-        with open(args.class_map, 'r') as input_file:
+    try:
+        # Find the class map json file
+        class_map = f"{run_dir}class_map.json"
+
+        with open(class_map, 'r') as input_file:
             class_map = json.load(input_file)
 
         # Update class map format
         class_map = {d['id']: d['name'] for d in class_map}
-    else:
+    except:
         print(f"ERROR: Class Map JSON file provided doesn't exist; please check input")
         sys.exit(1)
 
@@ -116,7 +129,7 @@ def inference(args):
         sys.exit(1)
 
     # Output directory
-    output_dir = f"{args.output_dir}\\{media_name}_{config_name}_{checkpoint_name}\\"
+    output_dir = f"{args.output_dir}\\{media_name}_{run_name}\\"
     os.makedirs(output_dir, exist_ok=True)
 
     # Either GPU or CPU
@@ -163,17 +176,14 @@ def main():
 
     parser = argparse.ArgumentParser(description="Inference")
 
-    parser.add_argument("--config", type=str, required=True,
-                        help="Path to model config file (.py)")
+    parser.add_argument("--run_dir", type=str, required=True,
+                        help="Directory containing the run")
 
-    parser.add_argument("--checkpoint", type=str, required=True,
-                        help="Path to model checkpoint file (.pth)")
+    parser.add_argument("--epoch", type=int, required=True,
+                        help="Epoch checkpoint to use")
 
     parser.add_argument('--media_dir', type=str, required=True,
-                        help='Directory where all the data is located')
-
-    parser.add_argument('--class_map', type=str, required=True,
-                        help='Path to Class Map JSON file')
+                        help='Directory predictions will be made on')
 
     parser.add_argument('--pred_threshold', type=float, default=0.25,
                         help='Prediction confidence threshold')

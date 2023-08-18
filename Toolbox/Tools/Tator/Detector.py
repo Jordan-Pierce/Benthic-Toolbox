@@ -1,5 +1,6 @@
 import os
 import sys
+import glob
 import json
 import argparse
 
@@ -15,6 +16,8 @@ from mmengine.utils import track_iter_progress
 from mmdet.apis import inference_detector, init_detector
 from mmdet.registry import VISUALIZERS
 
+import warnings
+warnings.filterwarnings("ignore")
 
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
@@ -54,41 +57,53 @@ def detector(args):
         print(f"ERROR: Medias provided is invalid; please check input")
         sys.exit(1)
 
+    # Check that config file exists
+    if os.path.exists(args.run_dir):
+        run_dir = f"{args.run_dir}\\"
+        run_name = os.path.dirname(run_dir).split("\\")[-1]
+        print(f"NOTE: Using run {run_name}")
+    else:
+        print(f"ERROR: Run directory doesn't exist; please check input")
+        sys.exit(1)
+
+    try:
+        # Find the config file
+        config = glob.glob(f"{run_dir}*.py")[0]
+        config_name = os.path.basename(config).split(".")[0]
+        print(f"NOTE: Using config file {config_name}")
+    except:
+        print(f"ERROR: Config file doesn't exist; please check input")
+        sys.exit(1)
+
+    try:
+        # Find the checkpoint file
+        checkpoints = glob.glob(f"{run_dir}*.pth")
+        checkpoint = [c for c in checkpoints if os.path.basename(c) == f'epoch_{args.epoch}.pth'][0]
+        checkpoint_name = os.path.basename(checkpoint).split(".")[0]
+        print(f"NOTE: Using checkpoint file {checkpoint_name}")
+    except:
+        print(f"ERROR: Checkpoint file doesn't exist; please check input")
+        sys.exit(1)
+
+    try:
+        # Find the class map json file
+        class_map = f"{run_dir}class_map.json"
+
+        with open(class_map, 'r') as input_file:
+            class_map = json.load(input_file)
+
+        # Update class map format
+        class_map = {d['id']: d['name'] for d in class_map}
+    except:
+        print(f"ERROR: Class Map JSON file provided doesn't exist; please check input")
+        sys.exit(1)
+
     try:
         # The type of localization for the project (bounding box, attributes)
         loc_type = api.get_localization_type_list(project_id)
         loc_type = [loc for loc in loc_type if loc.id == 440][0]
     except Exception as e:
         print(f"ERROR: Could not find the correct localization type in project {project_id}")
-        sys.exit(1)
-
-    # Check that config file exists
-    if os.path.exists(args.config):
-        config = args.config
-        config_name = os.path.basename(config).split(".")[0]
-        print(f"NOTE: Using config file {config_name}")
-    else:
-        print(f"ERROR: Config file doesn't exist; please check input")
-        sys.exit(1)
-
-    # Check that checkpoint is there
-    if os.path.exists(args.checkpoint):
-        checkpoint = args.checkpoint
-        checkpoint_name = os.path.basename(checkpoint).split(".")[0]
-        print(f"NOTE: Using checkpoint file {checkpoint_name}")
-    else:
-        print(f"ERROR: Checkpoint file doesn't exist; please check input")
-        sys.exit(1)
-
-    # Class map json file
-    if os.path.exists(args.class_map):
-        with open(args.class_map, 'r') as input_file:
-            class_map = json.load(input_file)
-
-        # Update class map format
-        class_map = {d['id']: d['name'] for d in class_map}
-    else:
-        print(f"ERROR: Class Map JSON file provided doesn't exist; please check input")
         sys.exit(1)
 
     # Root where all output is saved
@@ -104,7 +119,7 @@ def detector(args):
     print(f"NOTE: Using device {device}")
 
     # build the model from a config file and a checkpoint file
-    model = init_detector(config, checkpoint, device=device)
+    model = init_detector(config, checkpoint, palette='coco', device=device)
 
     # build test pipeline
     model.cfg.test_cfg.score_thr = args.pred_threshold
@@ -131,7 +146,10 @@ def detector(args):
         try:
             # Get the video handler
             media = api.get_media(media_id)
-            output_video_path = f"{output_dir}{media_id}\\"
+            ext = media.name.split(".")[-1]
+            output_media_dir = f"{output_dir}Detector_{media_id}\\"
+            output_video_path = f"{output_media_dir}{media_id}.{ext}"
+            os.makedirs(output_media_dir, exist_ok=True)
             print(f"NOTE: Downloading {media.name}...")
         except Exception as e:
             print(f"ERROR: Could not get media from {media_id}")
@@ -173,9 +191,9 @@ def detector(args):
                 result = inference_detector(model, frame, test_pipeline=test_pipeline)
 
                 # Parse out predictions
-                scores = result[0]['predictions']['scores']
-                labels = result[0]['predictions']['labels']
-                bboxes = result[0]['predictions']['bboxes']
+                scores = result.pred_instances.cpu().detach().scores.numpy()
+                labels = result.pred_instances.cpu().detach().labels.numpy()
+                bboxes = result.pred_instances.cpu().detach().bboxes.numpy()
 
                 # Record the predictions in tator format
                 for i_idx in range(len(bboxes)):
@@ -192,11 +210,9 @@ def detector(args):
                     w = float(xmax - xmax) / video_reader.width
                     h = float(ymax - ymax) / video_reader.height
 
-                    # Based on localization 440 - Detection
-
-                    score = scores[i_idx]
                     # TODO figure this one out
                     label = class_map[labels[i_idx]]
+                    score = scores[i_idx]
 
                     # For tator upload
                     loc = {'type': loc_type.id,
@@ -220,14 +236,19 @@ def detector(args):
                     predictions.append(pred)
 
                 if args.show_video:
-                    # Add predictions to frame
-                    visualizer.add_datasample(
-                        name='video',
-                        image=frame,
-                        data_sample=result,
-                        draw_gt=False,
-                        show=False,
-                        pred_score_thr=args.pred_threshold)
+
+                    try:
+                        # Add predictions to frame
+                        visualizer.add_datasample(
+                            name='video',
+                            image=frame,
+                            data_sample=result,
+                            draw_gt=False,
+                            show=False,
+                            wait_time=0.1,
+                            pred_score_thr=args.pred_threshold)
+                    except:
+                        pass
 
                     # Get the updated frame with visuals
                     frame = visualizer.get_image()
@@ -239,34 +260,41 @@ def detector(args):
                     # Write the frame to video file
                     video_writer.write(frame)
 
-        if video_writer:
+        if args.show_video:
             # Release the video handler
             video_writer.release()
             video_writer = None
 
-        # Close the viewing window
-        cv2.destroyAllWindows()
-        # Delete the original video
-        os.remove(output_video_path)
+            # Close the viewing window
+            cv2.destroyAllWindows()
+
+        try:
+            # Close the video writer
+            video_reader = None
+            # Delete the original video
+            os.remove(output_video_path)
+        except Exception as e:
+            print(f"WARNING: Could not delete media\n{e}")
 
         # ------------------------------------------------
         # Save and Upload localizations for this media
         # ------------------------------------------------
 
         # Save merged annotations as "predictions.csv"
-        predictions_path = f"{output_dir}predictions.csv"
+        predictions_path = f"{output_media_dir}predictions.csv"
         predictions = pd.DataFrame(predictions, columns=['Frame', 'Label', 'Score', 'xmin', 'ymin', 'xmax', 'ymax'])
         predictions.to_csv(predictions_path)
         print(f"NOTE: Merged predictions saved to {os.path.basename(predictions_path)}")
 
-        # Create the localizations in the video.
-        print(f"NOTE: Uploading object detections on {media.name}...")
-        num_created = 0
-        for response in tator.util.chunked_create(api.create_localization_list,
-                                                  project_id,
-                                                  localization_spec=localizations):
-            num_created += len(response.id)
-        print(f"NOTE: Successfully created {num_created} localizations on {media.name}!")
+        if args.upload:
+            # Create the localizations in the video.
+            print(f"NOTE: Uploading object detections on {media.name}...")
+            num_created = 0
+            for response in tator.util.chunked_create(api.create_localization_list,
+                                                      project_id,
+                                                      localization_spec=localizations):
+                num_created += len(response.id)
+            print(f"NOTE: Successfully created {num_created} localizations on {media.name}!")
 
     print(f"NOTE: Completed inference on {len(media_ids)} files.")
 
@@ -292,23 +320,23 @@ def main():
     parser.add_argument("--media_ids", type=int, nargs='+',
                         help="ID for desired media(s)")
 
+    parser.add_argument("--run_dir", type=str, required=True,
+                        help="Directory containing the run")
+
+    parser.add_argument("--epoch", type=int, required=True,
+                        help="Epoch checkpoint to use")
+
     parser.add_argument("--every_n", type=int, default=30,
                         help="Make predictions on every N frames")
-
-    parser.add_argument("--config", type=str, required=True,
-                        help="Path to model config file (.py)")
-
-    parser.add_argument("--checkpoint", type=str, required=True,
-                        help="Path to model checkpoint file (.pth)")
-
-    parser.add_argument('--class_map', type=str, required=True,
-                        help='Path to Class Map JSON file')
 
     parser.add_argument('--pred_threshold', type=float, default=0.25,
                         help='Prediction confidence threshold')
 
     parser.add_argument('--show_video', action='store_true',
                         help='Show video, and save it to the predictions directory')
+
+    parser.add_argument('--upload', action='store_true',
+                        help='Upload predictions to tator')
 
     parser.add_argument('--output_dir', type=str,
                         default=os.path.abspath("../../../Data/Predictions/"),

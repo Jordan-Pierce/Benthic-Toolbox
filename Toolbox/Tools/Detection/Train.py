@@ -71,9 +71,9 @@ def train(args):
 
     # Set the annotation files
     if os.path.exists(args.train) and os.path.exists(args.valid) and os.path.exists(args.test):
-        train_annotations = os.path.basename(args.train)
-        valid_annotations = os.path.basename(args.valid)
-        test_annotations = os.path.basename(args.test)
+        train_annotations = args.train
+        valid_annotations = args.valid
+        test_annotations = args.test
     else:
         print(f"ERROR: The annotation files do no not exist; check input provided")
         sys.exit(1)
@@ -102,9 +102,16 @@ def train(args):
     # Create the config
     cfg = Config.fromfile(config_file)
 
+    # Optional run name
+    if args.run_name:
+        run_name = args.run_name
+    else:
+        run_name = f"{get_now()}_{config_name}"
+
     # Create the output folder
-    output_dir = args.output_dir
-    work_dir = f"{output_dir}{get_now()}_{config_name}\\"
+    output_dir = f"{args.output_dir}\\"
+    # Directory for run output
+    work_dir = f"{output_dir}{run_name}\\"
     os.makedirs(work_dir, exist_ok=True)
     cfg.work_dir = work_dir
 
@@ -126,9 +133,9 @@ def train(args):
     cfg.default_hooks['checkpoint']['max_keep_ckpts'] = args.max_epochs
     cfg.optim_wrapper['optimizer']['lr'] = base_lr
 
-    print(f"NOTE: Setting data root to {args.data_root}")
+    print(f"NOTE: Setting annotation files")
     # Path to dataset
-    cfg.data_root = args.data_root
+    cfg.data_root = ""
 
     print(f"NOTE: Number of class categories {len(class_map)}")
     # Number of classes
@@ -139,7 +146,7 @@ def train(args):
     cfg.train_cfg['max_epochs'] = max_epochs
     cfg.train_cfg['val_interval'] = val_interval
     cfg.train_dataloader['batch_size'] = batch_size
-    cfg.train_dataloader['dataset']['data_root'] = f"{args.data_root}"
+    cfg.train_dataloader['dataset']['data_root'] = ""
     cfg.train_dataloader['dataset']['ann_file'] = train_annotations
     cfg.train_dataloader['dataset']['data_prefix'] = {'img': ''}
     cfg.train_dataloader['dataset']['metainfo'] = metainfo
@@ -147,7 +154,7 @@ def train(args):
     print(f"NOTE: Creating valid dataloader")
     # Valid dataloader
     cfg.val_dataloader['batch_size'] = batch_size
-    cfg.val_dataloader['dataset']['data_root'] = f"{args.data_root}"
+    cfg.val_dataloader['dataset']['data_root'] = ""
     cfg.val_dataloader['dataset']['ann_file'] = valid_annotations
     cfg.val_dataloader['dataset']['data_prefix'] = {'img': ''}
     cfg.val_dataloader['dataset']['metainfo'] = metainfo
@@ -159,8 +166,8 @@ def train(args):
 
     print(f"NOTE: Creating evaluators")
     # Evaluators, make them the same
-    cfg.val_evaluator['ann_file'] = f"{args.data_root}{valid_annotations}"
-    cfg.test_evaluator['ann_file'] = f"{args.data_root}{test_annotations}"
+    cfg.val_evaluator['ann_file'] = valid_annotations
+    cfg.test_evaluator['ann_file'] = test_annotations
 
     print(f"NOTE: Setting up Tensorboard ")
     cfg.visualizer['vis_backends'].append({'type': 'TensorboardVisBackend'})
@@ -203,7 +210,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train")
 
     parser.add_argument("--config", type=str,
-                        default="./configs/rtmdet/rtmdet_tiny_8xb32-300e_coco.py",
+                        default="./configs/rtmdet/rtmdet_m_8xb32-300e_coco.py",
                         help="Path to model config file")
 
     parser.add_argument("--train", type=str, required=True,
@@ -218,16 +225,16 @@ def main():
     parser.add_argument("--class_map", type=str, required=True,
                         help="Path to the Class Map JSON file")
 
-    parser.add_argument('--data_root', type=str, required=True,
-                        help='Directory where all data is saved')
+    parser.add_argument("--run_name", type=str, default="",
+                        help="Name for run (optional)")
 
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Directory to save logs and models')
 
-    parser.add_argument('--batch_size', type=int, default=32,
+    parser.add_argument('--batch_size', type=int, default=16,
                         help='Number of samples to pass model in a single batch (GPU dependent')
 
-    parser.add_argument('--max_epochs', type=int, default=30,
+    parser.add_argument('--max_epochs', type=int, default=50,
                         help='Total number of times model sees every sample in training set')
 
     parser.add_argument('--lr', type=float, default=0.004,
