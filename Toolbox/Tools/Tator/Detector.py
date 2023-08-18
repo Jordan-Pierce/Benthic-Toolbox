@@ -7,6 +7,7 @@ import argparse
 import cv2
 import torch
 import tator
+import numpy as np
 import pandas as pd
 
 import mmcv
@@ -198,6 +199,13 @@ def detector(args):
                 # Record the predictions in tator format
                 for i_idx in range(len(bboxes)):
 
+                    # TODO figure this one out
+                    label = class_map[labels[i_idx]]
+                    score = float(np.around(scores[i_idx]), 3)
+
+                    if score < args.pred_threshold:
+                        continue
+
                     # Local archive format
                     xmin = int(bboxes[i_idx][0])
                     ymin = int(bboxes[i_idx][1])
@@ -207,12 +215,8 @@ def detector(args):
                     # Tator format of bounding boxes
                     x = float(xmin / video_reader.width)
                     y = float(ymin / video_reader.height)
-                    w = float((xmax - xmax) / video_reader.width)
-                    h = float((ymax - ymax) / video_reader.height)
-
-                    # TODO figure this one out
-                    label = class_map[labels[i_idx]]
-                    score = float(scores[i_idx])
+                    w = float((xmax - xmin) / video_reader.width)
+                    h = float((ymax - ymin) / video_reader.height)
 
                     # For tator upload
                     loc = {'type': loc_type.id,
@@ -236,8 +240,6 @@ def detector(args):
                     predictions.append(pred)
 
                 if args.show_video:
-
-                    video_name = f"{media.name}: {f_idx}%"
 
                     try:
                         # Add predictions to frame
