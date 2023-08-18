@@ -46,8 +46,8 @@ def upload(args):
 
     try:
         # The type of localization for the project (bounding box, attributes)
-        loc_type = api.get_localization_type_list(project_id)
-        loc_type = [loc for loc in loc_type if loc.id == 440][0]
+        loc_type_id = 440  # Detection Box
+        layer_type_id = 228  # AI Experiments
     except Exception as e:
         print(f"ERROR: Could not find the correct localization type in project {project_id}")
         sys.exit(1)
@@ -56,7 +56,6 @@ def upload(args):
     localizations = []
 
     for i, r in annotations.iterrows():
-
         # Tator format of bounding boxes
         x = float(r['xmin'] / Media.width)
         y = float(r['ymin'] / Media.height)
@@ -71,20 +70,19 @@ def upload(args):
         label = r['Label']
 
         # Standard spec for this bounding box
-        spec = {
-            'type': loc_type.id,
-            'media_id': media_id,
-            'x': x,
-            'y': y,
-            'width': w,
-            'height': h,
-            'frame': frame,
-            'ScientificName': "",
-            'CommonName': "",
-            'Notes': "",
-            'Needs Review': True,
-            'Score': score
-        }
+        spec = {'media_id': media_id,
+                'type': loc_type_id,
+                'version': layer_type_id,
+                'x': x,
+                'y': y,
+                'width': w,
+                'height': h,
+                'frame': frame,
+                'ScientificName': "",
+                'CommonName': "",
+                'Notes': "",
+                'Needs Review': True,
+                'Score': score}
 
         # Add to list
         localizations.append(spec)

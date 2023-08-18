@@ -17,7 +17,9 @@ from mmdet.apis import inference_detector, init_detector
 from mmdet.registry import VISUALIZERS
 
 import warnings
+
 warnings.filterwarnings("ignore")
+
 
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
@@ -100,8 +102,8 @@ def detector(args):
 
     try:
         # The type of localization for the project (bounding box, attributes)
-        loc_type = api.get_localization_type_list(project_id)
-        loc_type = [loc for loc in loc_type if loc.id == 440][0]
+        loc_type_id = 440  # Detection Box
+        layer_type_id = 228  # AI Experiments
     except Exception as e:
         print(f"ERROR: Could not find the correct localization type in project {project_id}")
         sys.exit(1)
@@ -218,8 +220,9 @@ def detector(args):
                     h = float((ymax - ymin) / video_reader.height)
 
                     # For tator upload
-                    loc = {'type': loc_type.id,
-                           'media_id': media.id,
+                    loc = {'media_id': media.id,
+                           'type': loc_type_id,
+                           'version': layer_type_id,
                            'x': x,
                            'y': y,
                            'width': w,
