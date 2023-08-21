@@ -50,6 +50,8 @@ def delete(args):
         loc_name = api.get_localization_type(loc_type_id).name
         layer_type_id = 228  # AI Experiments
         layer_name = api.get_version(layer_type_id).name
+        state_type_id = 147  # State Type
+        state_name = api.get_state_type(state_type_id).name
     except Exception as e:
         print(f"ERROR: Could not find the correct localization type in project {project_id}")
         sys.exit(1)
@@ -69,6 +71,14 @@ def delete(args):
 
         print(f"NOTE: Found {len(localizations)} localizations for {loc_name} layer {layer_name}")
 
+        # Get the tracks that are in the layer AI experiments
+        tracks = api.get_state_list(project=project_id,
+                                    media_id=[media_id],
+                                    type=state_type_id,
+                                    version=[layer_type_id])
+
+        print(f"NOTE: Found {len(tracks)} tracks for {state_name} layer {layer_name}")
+
         # Don't delete all, just those that Need Review
         if not args.delete_all:
             # Grabs the localizations that Need Review, leaving the others behind
@@ -77,17 +87,29 @@ def delete(args):
         print(f"NOTE: Targeting {len(localizations)} localizations for {loc_name} type - layer {layer_name}")
 
         try:
-            print(f"NOTE: Deleting localizations in 60 seconds...")
-            time.sleep(60)
 
-            # Get just the ids of target locs
-            ids = [l.id for l in localizations]
+            if localizations or tracks:
+                print(f"NOTE: Deleting {len(localizations)} localizations, {len(tracks)} tracks in 60 seconds...")
+                # time.sleep(60)
 
-            # Burn baby burn
-            response = api.delete_localization_list(project=project_id,
-                                                    media_id=[media_id],
-                                                    localization_bulk_delete={"ids": ids})
-            print(f"NOTE: {response.message}")
+            if tracks:
+                # Burn baby burn
+                response = api.delete_state_list(project=project_id,
+                                                 media_id=[media_id],
+                                                 type=state_type_id,
+                                                 version=[layer_type_id])
+
+                print(f"NOTE: {response.message}")
+
+            if localizations:
+                # Get just the ids of target locs
+                ids = [l.id for l in localizations]
+
+                # Burn baby burn
+                response = api.delete_localization_list(project=project_id,
+                                                        media_id=[media_id],
+                                                        localization_bulk_delete={"ids": ids})
+                print(f"NOTE: {response.message}")
 
         except Exception as e:
             print(f"ERROR: {e}")
