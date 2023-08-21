@@ -90,7 +90,7 @@ def delete(args):
 
             if localizations or tracks:
                 print(f"NOTE: Deleting {len(localizations)} localizations, {len(tracks)} tracks in 60 seconds...")
-                # time.sleep(60)
+                time.sleep(60)
 
             if tracks:
                 # Burn baby burn
@@ -108,6 +108,8 @@ def delete(args):
                 # Burn baby burn
                 response = api.delete_localization_list(project=project_id,
                                                         media_id=[media_id],
+                                                        type=loc_type_id,
+                                                        version=[layer_type_id],
                                                         localization_bulk_delete={"ids": ids})
                 print(f"NOTE: {response.message}")
 
