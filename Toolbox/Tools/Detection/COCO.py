@@ -183,6 +183,18 @@ def to_coco(annotations, column_name, class_mapping, coco_file):
     return coco_file
 
 
+def modify_column(value, class_list):
+    """
+    :param value:
+    :param class_list:
+    :return:
+    """
+    if value in class_list:
+        return value
+    else:
+        return 'Object'
+
+
 def coco(args):
     """
     :param ann_file:
@@ -218,16 +230,10 @@ def coco(args):
     test_annotations = concat_annotations(args.test_files)
 
     # Filter based on list
-    if args.only_include:
-        train_annotations = train_annotations[train_annotations[column_name].isin(args.only_include)]
-        valid_annotations = valid_annotations[valid_annotations[column_name].isin(args.only_include)]
-        test_annotations = test_annotations[test_annotations[column_name].isin(args.only_include)]
-
-    # Single object detector (both could be used)
-    if args.single_object_detector:
-        train_annotations[column_name] = 'Object'
-        valid_annotations[column_name] = 'Object'
-        test_annotations[column_name] = 'Object'
+    if args.separate:
+        train_annotations[column_name] = train_annotations[column_name].apply(modify_column, args=(args.separate,))
+        valid_annotations[column_name] = valid_annotations[column_name].apply(modify_column, args=(args.separate,))
+        test_annotations[column_name] = test_annotations[column_name].apply(modify_column, args=(args.separate,))
 
     # Combine
     annotations = pd.concat((train_annotations, valid_annotations, test_annotations))
@@ -280,14 +286,11 @@ def main():
     parser.add_argument("--test_files", type=str, nargs="+",
                         help="Path to the testing annotation files")
 
-    parser.add_argument("--column_name", type=str, default='Mapped',
+    parser.add_argument("--column_name", type=str, default='ScientificName',
                         help="Label column to use; either ScientificName or Mapped")
 
-    parser.add_argument("--single_object_detector", action='store_true',
-                        help="All labels are replaced with a single class category")
-
-    parser.add_argument("--only_include", type=str, nargs="+",
-                        help="A list of class categories to use, others filtered out")
+    parser.add_argument("--separate", type=str, nargs="+",
+                        help="A list of class categories to separate out as their own class categories")
 
     parser.add_argument("--plot_n_samples", type=int, default=15,
                         help="Plot N samples to show COCO labels on images")

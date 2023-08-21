@@ -124,7 +124,12 @@ def detector(args):
     model = init_detector(config, checkpoint, palette='coco', device=device)
 
     # build test pipeline
-    model.cfg.test_cfg.score_thr = args.pred_threshold
+    model.cfg.test_cfg = dict(max_per_img=300,
+                              min_bbox_size=0,
+                              nms=dict(iou_threshold=args.nms_threshold, type='nms'),
+                              nms_pre=30000,
+                              score_thr=args.pred_threshold)
+
     model.cfg.test_dataloader.dataset.pipeline[0].type = 'LoadImageFromNDArray'
     test_pipeline = Compose(model.cfg.test_dataloader.dataset.pipeline)
 
@@ -204,8 +209,15 @@ def detector(args):
                     label = class_map[labels[i_idx]]
                     score = round(float(scores[i_idx]), 3)
 
+                    # Less than threshold, don't upload
                     if score < args.pred_threshold:
                         continue
+
+                    # Less than threshold, don't label
+                    if score < 0.5 or label == 'Object':
+                        scientific = ""
+                    else:
+                        scientific = label
 
                     # Local archive format
                     xmin = int(bboxes[i_idx][0])
@@ -229,7 +241,7 @@ def detector(args):
                            'height': h,
                            'frame': f_idx,
                            'attributes': {
-                               'ScientificName': "",
+                               'ScientificName': scientific,
                                'CommonName': "",
                                'Notes': "",
                                'Needs Review': True,
@@ -296,7 +308,7 @@ def detector(args):
 
         if args.upload:
             # Create the localizations in the video.
-            print(f"NOTE: Uploading object detections on {media.name}...")
+            print(f"NOTE: Uploading {len(localizations)} detections on {media.name}...")
             num_created = 0
             for response in tator.util.chunked_create(api.create_localization_list,
                                                       project_id,
@@ -304,7 +316,7 @@ def detector(args):
                 num_created += len(response.id)
             print(f"NOTE: Successfully created {num_created} localizations on {media.name}!")
 
-    print(f"NOTE: Completed inference on {len(media_ids)} files.")
+    print(f"NOTE: Completed inference on {len(media_ids)} medias.")
 
 
 # -----------------------------------------------------------------------------
@@ -337,8 +349,11 @@ def main():
     parser.add_argument("--every_n", type=int, default=30,
                         help="Make predictions on every N frames")
 
-    parser.add_argument('--pred_threshold', type=float, default=0.25,
+    parser.add_argument('--pred_threshold', type=float, default=0.3,
                         help='Prediction confidence threshold')
+
+    parser.add_argument('--nms_threshold', type=float, default=0.,
+                        help='Non-maximum suppression threshold (low is conservative')
 
     parser.add_argument('--show_video', action='store_true',
                         help='Show video, and save it to the predictions directory')
