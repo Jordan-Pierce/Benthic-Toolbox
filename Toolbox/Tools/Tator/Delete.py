@@ -17,7 +17,7 @@ def delete(args):
     """
 
     print("\n###############################################")
-    print("Detector")
+    print("Delete")
     print("###############################################\n")
 
     try:
@@ -71,6 +71,13 @@ def delete(args):
 
         print(f"NOTE: Found {len(localizations)} localizations for {loc_name} layer {layer_name}")
 
+        # Don't delete all, just those that Need Review
+        if not args.delete_all:
+            # Grabs the localizations that Need Review, leaving the others behind
+            localizations = [l for l in localizations if l.attributes['Needs Review']]
+
+        print(f"NOTE: Targeting {len(localizations)} localizations for {loc_name} type - layer {layer_name}")
+
         # Get the tracks that are in the layer AI experiments
         tracks = api.get_state_list(project=project_id,
                                     media_id=[media_id],
@@ -78,13 +85,6 @@ def delete(args):
                                     version=[layer_type_id])
 
         print(f"NOTE: Found {len(tracks)} tracks for {state_name} layer {layer_name}")
-
-        # Don't delete all, just those that Need Review
-        if not args.delete_all:
-            # Grabs the localizations that Need Review, leaving the others behind
-            localizations = [l for l in localizations if l.attributes['Needs Review']]
-
-        print(f"NOTE: Targeting {len(localizations)} localizations for {loc_name} type - layer {layer_name}")
 
         try:
 
