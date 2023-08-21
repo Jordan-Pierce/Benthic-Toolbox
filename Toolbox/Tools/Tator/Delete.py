@@ -89,8 +89,8 @@ def delete(args):
         try:
 
             if localizations or tracks:
-                print(f"NOTE: Deleting {len(localizations)} localizations, {len(tracks)} tracks in 60 seconds...")
-                time.sleep(60)
+                print(f"NOTE: Deleting {len(localizations)} localizations, {len(tracks)} tracks in 15 seconds...")
+                time.sleep(15)
 
             if tracks:
                 # Burn baby burn

@@ -292,6 +292,7 @@ def tracker(args):
                            'width': w,
                            'height': h,
                            'frame': f_idx,
+                           'track_id': track_ids[i_idx],
                            'attributes': {
                                'ScientificName': "",
                                'CommonName': "",
@@ -367,12 +368,33 @@ def tracker(args):
         if args.upload:
             # Create the localizations in the video.
             print(f"NOTE: Uploading {len(localizations)} detections on {media.name}...")
-            num_created = 0
-            for response in tator.util.chunked_create(api.create_localization_list,
-                                                      project_id,
-                                                      body=localizations):
-                num_created += len(response.id)
-            print(f"NOTE: Successfully created {num_created} localizations on {media.name}!")
+            localization_ids = []
+            for response in tator.util.chunked_create(api.create_localization_list, project_id, body=localizations):
+                localization_ids.extend(response.id)
+            print(f"NOTE: Successfully created {len(localization_ids)} localizations on {media.name}!")
+
+            # Associate the localization ids with track ids
+            track_ids = [l['track_id'] for l in localizations]
+            track_ids = np.array(list(zip(track_ids, localization_ids)))
+            num_tracks = len(np.unique(track_ids.T[0]))
+
+            print(f"NOTE: Uploading {num_tracks} tracks on {media.name}...")
+            states = []
+            for track_id in np.unique(track_ids.T[0]):
+
+                state = {'type': state_type_id,
+                         'version': layer_type_id,
+                         'localization_ids': track_ids.T[1][np.where(track_ids.T[0] == track_id)].tolist(),
+                         'media_ids': [media_id],
+                         'Scientfic Name': "",
+                         'Notes': ""}
+
+                states.append(state)
+
+            state_ids = []
+            for response in tator.util.chunked_create(api.create_state_list, project_id, body=states):
+                state_ids += response.id
+            print(f"Created {len(state_ids)} tracks on {media.name}!")
 
     print(f"NOTE: Completed inference on {len(media_ids)} medias.")
 
