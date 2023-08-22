@@ -129,7 +129,7 @@ def tracker(args):
     print(f"NOTE: Using device {device}")
 
     # build the model from a config file and a checkpoint file
-    model = init_detector(config, checkpoint, palette='coco', device=device)
+    model = init_detector(config, checkpoint, palette='random', device=device)
 
     # build test pipeline
     model.cfg.test_cfg = dict(max_per_img=300,
@@ -144,12 +144,12 @@ def tracker(args):
     # ------------------------------------------------
     # Tracker
     # ------------------------------------------------
-    # Keep track of all classes
-    class_tracker = {}
     # DeepSort object
-    deepsort = DeepSort(max_age=100,
+    deepsort = DeepSort(max_age=50,
+                        max_iou_distance=0.7,
+                        max_cosine_distance=0.2,
                         n_init=3,
-                        nn_budget=None,
+                        nn_budget=100,
                         nms_max_overlap=1.0,
                         embedder="clip_ViT-B/32",
                         embedder_gpu=device)
@@ -205,7 +205,7 @@ def tracker(args):
 
         if args.show_video:
             # Create a path for the predictions video
-            output_pred_path = output_video_path.split(".")[0] + "_predictions.mp4"
+            output_pred_path = output_video_path.split(".")[0] + "_tracking.mp4"
             # To output the video with predictions super-imposed
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             video_writer = cv2.VideoWriter(output_pred_path, fourcc, video_reader.fps,
@@ -241,41 +241,46 @@ def tracker(args):
                 tracks = deepsort.update_tracks(detections, frame=frame)
 
                 # Update result
-                scores = []
-                bboxes = []
+                updated_scores = []
+                updated_bboxes = []
+                updated_labels = []
                 track_ids = []
 
                 # Loop through tracks
                 for t_idx, track in enumerate(tracks):
 
                     if not track.get_det_conf():
-                        track.det_conf = args.pred_threshold
+                        updated_scores.append(args.pred_threshold)
+                        updated_bboxes.append(track.to_ltwh())
+                        updated_labels.append(track.get_det_class())
+                        track_ids.append(int(track.track_id))
+                    else:
+                        updated_scores.append(track.get_det_conf())
+                        updated_bboxes.append(track.to_ltwh(orig=True))
+                        updated_labels.append(track.get_det_class())
+                        track_ids.append(int(track.track_id))
 
-                    scores.append(track.get_det_conf())
-                    bboxes.append(track.to_ltwh(orig=True))
-                    track_ids.append(int(track.track_id))
-
-                # Create a new data sample after filtering
+                # Create a new data sample after filtering (for local visualization only)
                 pred_track_instances = InstanceData(metainfo=result.metainfo)
-                pred_track_instances.scores = np.array(scores)
-                pred_track_instances.bboxes = np.array(bboxes)
+                pred_track_instances.scores = np.array(updated_scores)
+                pred_track_instances.bboxes = np.array(updated_bboxes)
                 pred_track_instances.labels = np.array(track_ids)
                 result = DetDataSample(pred_instances=pred_track_instances)
 
                 # Record the predictions in tator format
-                for i_idx in range(len(indices)):
+                for i_idx in range(len(updated_bboxes)):
                     # Score, Label for tator
-                    score = scores[i_idx]
-                    label = class_map[labels[i_idx]]
+                    score = updated_scores[i_idx]
+                    label = class_map[updated_labels[i_idx]]
 
                     if score <= args.pred_threshold:
                         continue
 
                     # Local archive format
-                    xmin = int(bboxes[i_idx][0])
-                    ymin = int(bboxes[i_idx][1])
-                    xmax = int(bboxes[i_idx][2])
-                    ymax = int(bboxes[i_idx][3])
+                    xmin = int(updated_bboxes[i_idx][0])
+                    ymin = int(updated_bboxes[i_idx][1])
+                    xmax = int(updated_bboxes[i_idx][2])
+                    ymax = int(updated_bboxes[i_idx][3])
 
                     # Tator format of bounding boxes
                     x = float(xmin / video_reader.width)
@@ -312,9 +317,13 @@ def tracker(args):
                 if args.show_video:
 
                     try:
+                        # This is just used for visualizations locally
+                        class_tracker = {}
+
                         # Update the classes for tracking objects
                         for track in deepsort.tracker.tracks:
                             class_tracker[f'Object {str(track.track_id)}'] = track.track_id
+
                         visualizer.dataset_meta['classes'] = list(class_tracker.keys())
 
                         # Add predictions to frame
@@ -333,8 +342,8 @@ def tracker(args):
                     frame = visualizer.get_image()
 
                     # Display predictions as they are happening
-                    cv2.namedWindow('video', 0)
-                    mmcv.imshow(frame, 'video', 1)
+                    # cv2.namedWindow('video', 0)
+                    # mmcv.imshow(frame, 'video', 1)
 
                     # Write the frame to video file
                     video_writer.write(frame)
@@ -394,7 +403,7 @@ def tracker(args):
             state_ids = []
             for response in tator.util.chunked_create(api.create_state_list, project_id, body=states):
                 state_ids += response.id
-            print(f"Created {len(state_ids)} tracks on {media.name}!")
+            print(f"NOTE: Successfully created {len(state_ids)} tracks on {media.name}!")
 
     print(f"NOTE: Completed inference on {len(media_ids)} medias.")
 
