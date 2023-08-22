@@ -273,6 +273,7 @@ def tracker(args):
                     score = updated_scores[i_idx]
                     label = class_map[updated_labels[i_idx]]
 
+                    # Redundant sanity check
                     if score <= args.pred_threshold:
                         continue
 
@@ -342,8 +343,8 @@ def tracker(args):
                     frame = visualizer.get_image()
 
                     # Display predictions as they are happening
-                    # cv2.namedWindow('video', 0)
-                    # mmcv.imshow(frame, 'video', 1)
+                    cv2.namedWindow('video', 0)
+                    mmcv.imshow(frame, 'video', 1)
 
                     # Write the frame to video file
                     video_writer.write(frame)
