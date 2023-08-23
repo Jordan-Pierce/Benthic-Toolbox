@@ -50,7 +50,7 @@ def delete(args):
         loc_name = api.get_localization_type(loc_type_id).name
         layer_type_id = 228  # AI Experiments
         layer_name = api.get_version(layer_type_id).name
-        state_type_id = 147  # State Type
+        state_type_id = 438  # State Type
         state_name = api.get_state_type(state_type_id).name
     except Exception as e:
         print(f"ERROR: Could not find the correct localization type in project {project_id}")

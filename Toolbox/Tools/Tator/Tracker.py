@@ -110,8 +110,11 @@ def tracker(args):
     try:
         # The type of localization for the project (bounding box, attributes)
         loc_type_id = 440  # Detection Box
+        loc_name = api.get_localization_type(loc_type_id).name
         layer_type_id = 228  # AI Experiments
-        state_type_id = 147  # State Type
+        layer_name = api.get_version(layer_type_id).name
+        state_type_id = 438  # State Type
+        state_name = api.get_state_type(state_type_id).name
     except Exception as e:
         print(f"ERROR: Could not find the correct localization type in project {project_id}")
         sys.exit(1)
@@ -172,6 +175,8 @@ def tracker(args):
         localizations = []
         # For local archive
         predictions = []
+        # For visualization (locally)
+        class_tracker = {}
 
         try:
             # Get the video handler
@@ -215,7 +220,7 @@ def tracker(args):
         for f_idx, frame in enumerate(track_iter_progress(video_reader)):
 
             # Make predictions on every N frames
-            if f_idx % args.every_n == 0:
+            if f_idx % args.every_n == 0 and f_idx > args.start_at:
 
                 # Make predictions
                 result = inference_detector(model, frame, test_pipeline=test_pipeline)
@@ -230,6 +235,11 @@ def tracker(args):
                 scores = scores[indices]
                 labels = labels[indices]
                 bboxes = bboxes[indices]
+
+                # Modify the labels based on score and threshold value
+                # Replace the detected label if the score is below the threshold
+                object_class = {v: k for k, v in class_map.items()}['Object']
+                labels[np.where(scores < 0.5)] = object_class
 
                 # Reformat result
                 detections = []
@@ -318,12 +328,9 @@ def tracker(args):
                 if args.show_video:
 
                     try:
-                        # This is just used for visualizations locally
-                        class_tracker = {}
-
                         # Update the classes for tracking objects
-                        for track in deepsort.tracker.tracks:
-                            class_tracker[f'Object {str(track.track_id)}'] = track.track_id
+                        for (l, t) in zip(labels, track_ids):
+                            class_tracker[f'{class_map[l]} {str(t)}'] = t
 
                         visualizer.dataset_meta['classes'] = list(class_tracker.keys())
 
@@ -438,6 +445,9 @@ def main():
 
     parser.add_argument("--every_n", type=int, default=30,
                         help="Make predictions on every N frames")
+
+    parser.add_argument("--start_at", type=int, default=0,
+                        help="Frame to start making predictions at")
 
     parser.add_argument('--pred_threshold', type=float, default=0.3,
                         help='Prediction confidence threshold')
