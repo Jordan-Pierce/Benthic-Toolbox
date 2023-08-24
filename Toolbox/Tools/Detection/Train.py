@@ -167,7 +167,9 @@ def train(args):
     print(f"NOTE: Creating evaluators")
     # Evaluators, make them the same
     cfg.val_evaluator['ann_file'] = valid_annotations
+    cfg.val_evaluator['classwise'] = True
     cfg.test_evaluator['ann_file'] = test_annotations
+    cfg.test_evaluator['classwise'] = True
 
     print(f"NOTE: Setting up Tensorboard ")
     cfg.visualizer['vis_backends'].append({'type': 'TensorboardVisBackend'})

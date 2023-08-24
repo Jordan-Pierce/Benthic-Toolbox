@@ -148,12 +148,12 @@ def tracker(args):
     # Tracker
     # ------------------------------------------------
     # DeepSort object
-    deepsort = DeepSort(max_age=50,
-                        max_iou_distance=0.7,
-                        max_cosine_distance=0.2,
+    deepsort = DeepSort(max_age=15,
+                        max_iou_distance=0.5,
+                        max_cosine_distance=0.5,
                         n_init=3,
-                        nn_budget=100,
-                        nms_max_overlap=1.0,
+                        nn_budget=None,
+                        nms_max_overlap=.5,
                         embedder="clip_ViT-B/32",
                         embedder_gpu=device)
 
@@ -239,7 +239,7 @@ def tracker(args):
                 # Modify the labels based on score and threshold value
                 # Replace the detected label if the score is below the threshold
                 object_class = {v: k for k, v in class_map.items()}['Object']
-                labels[np.where(scores < 0.5)] = object_class
+                labels[np.where(scores < 0.75)] = object_class
 
                 # Reformat result
                 detections = []
@@ -261,7 +261,7 @@ def tracker(args):
 
                     if not track.get_det_conf():
                         updated_scores.append(args.pred_threshold)
-                        updated_bboxes.append(track.to_ltwh())
+                        updated_bboxes.append(track.to_ltwh(orig=True))
                         updated_labels.append(track.get_det_class())
                         track_ids.append(int(track.track_id))
                     else:
@@ -279,6 +279,7 @@ def tracker(args):
 
                 # Record the predictions in tator format
                 for i_idx in range(len(updated_bboxes)):
+
                     # Score, Label for tator
                     score = updated_scores[i_idx]
                     label = class_map[updated_labels[i_idx]]
@@ -286,6 +287,12 @@ def tracker(args):
                     # Redundant sanity check
                     if score <= args.pred_threshold:
                         continue
+
+                    # TODO do something here in the future
+                    if score > 0.0:
+                        scientific = "Not Set"
+                    else:
+                        scientific = "Not Set"
 
                     # Local archive format
                     xmin = int(updated_bboxes[i_idx][0])
@@ -310,7 +317,7 @@ def tracker(args):
                            'frame': f_idx,
                            'track_id': track_ids[i_idx],
                            'attributes': {
-                               'ScientificName': "",
+                               'ScientificName': scientific,
                                'CommonName': "",
                                'Notes': "",
                                'Needs Review': True,
@@ -403,7 +410,7 @@ def tracker(args):
                          'version': layer_type_id,
                          'localization_ids': track_ids.T[1][np.where(track_ids.T[0] == track_id)].tolist(),
                          'media_ids': [media_id],
-                         'Scientfic Name': "",
+                         'ScientificName': "Not Set",
                          'Notes': ""}
 
                 states.append(state)
