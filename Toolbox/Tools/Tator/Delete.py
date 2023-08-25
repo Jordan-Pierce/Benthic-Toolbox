@@ -63,6 +63,14 @@ def delete(args):
         media = api.get_media(media_id)
         print(f"NOTE: Media ID {media_id} corresponds to {media.name}")
 
+        # Get the tracks that are in the layer AI experiments
+        tracks = api.get_state_list(project=project_id,
+                                    media_id=[media_id],
+                                    type=state_type_id,
+                                    version=[layer_type_id])
+
+        print(f"NOTE: Found {len(tracks)} tracks for {state_name} layer {layer_name}")
+
         # Get the localizations that are Detections, in the layer AI Experiments
         localizations = api.get_localization_list(project=project_id,
                                                   media_id=[media_id],
@@ -78,18 +86,10 @@ def delete(args):
 
         print(f"NOTE: Targeting {len(localizations)} localizations for {loc_name} type - layer {layer_name}")
 
-        # Get the tracks that are in the layer AI experiments
-        tracks = api.get_state_list(project=project_id,
-                                    media_id=[media_id],
-                                    type=state_type_id,
-                                    version=[layer_type_id])
-
-        print(f"NOTE: Found {len(tracks)} tracks for {state_name} layer {layer_name}")
-
         try:
 
-            if localizations or tracks:
-                print(f"NOTE: Deleting {len(localizations)} localizations, {len(tracks)} tracks in 15 seconds...")
+            if tracks or localizations:
+                print(f"NOTE: Deleting {len(tracks)} tracks, {len(localizations)} localizations in 15 seconds...")
                 time.sleep(15)
 
             if tracks:
