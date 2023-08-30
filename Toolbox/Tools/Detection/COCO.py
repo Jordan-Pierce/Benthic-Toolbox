@@ -235,6 +235,11 @@ def coco(args):
         valid_annotations[column_name] = valid_annotations[column_name].apply(modify_column, args=(args.separate,))
         test_annotations[column_name] = test_annotations[column_name].apply(modify_column, args=(args.separate,))
 
+    if args.single_object:
+        train_annotations[column_name] = 'Object'
+        valid_annotations[column_name] = 'Object'
+        test_annotations[column_name] = 'Object'
+
     # Combine
     annotations = pd.concat((train_annotations, valid_annotations, test_annotations))
 
@@ -291,6 +296,9 @@ def main():
 
     parser.add_argument("--separate", type=str, nargs="+",
                         help="A list of class categories to separate out as their own class categories")
+
+    parser.add_argument("--single_object", action='store_true',
+                        help="Single 'Object' detector")
 
     parser.add_argument("--plot_n_samples", type=int, default=15,
                         help="Plot N samples to show COCO labels on images")

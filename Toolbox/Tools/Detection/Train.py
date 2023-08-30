@@ -212,7 +212,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train")
 
     parser.add_argument("--config", type=str,
-                        default="./configs/rtmdet/rtmdet_m_8xb32-300e_coco.py",
+                        default="./configs/rtmdet/rtmdet_tiny_8xb32-300e_coco.py",
                         help="Path to model config file")
 
     parser.add_argument("--train", type=str, required=True,
@@ -236,10 +236,10 @@ def main():
     parser.add_argument('--batch_size', type=int, default=16,
                         help='Number of samples to pass model in a single batch (GPU dependent')
 
-    parser.add_argument('--max_epochs', type=int, default=100,
+    parser.add_argument('--max_epochs', type=int, default=30,
                         help='Total number of times model sees every sample in training set')
 
-    parser.add_argument('--lr', type=float, default=0.005,
+    parser.add_argument('--lr', type=float, default=0.0075,
                         help='The amount to adjust model parameters by during back-prop')
 
     parser.add_argument('--launcher', choices=['none', 'pytorch', 'slurm', 'mpi'],

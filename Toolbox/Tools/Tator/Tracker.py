@@ -149,11 +149,11 @@ def tracker(args):
     # ------------------------------------------------
     # DeepSort object
     deepsort = DeepSort(max_age=15,
-                        max_iou_distance=0.5,
-                        max_cosine_distance=0.5,
+                        # max_iou_distance=0.5,
+                        # max_cosine_distance=0.5,
                         n_init=3,
                         nn_budget=None,
-                        nms_max_overlap=.5,
+                        # nms_max_overlap=.5,
                         embedder="clip_ViT-B/32",
                         embedder_gpu=device)
 
@@ -162,7 +162,7 @@ def tracker(args):
     # ------------------------------------------------
     visualizer = VISUALIZERS.build(model.cfg.visualizer)
     # the dataset_meta is loaded from the checkpoint and
-    # then pass to the model in init_detector
+    # then passed to the model in init_detector
     visualizer.dataset_meta = model.dataset_meta
 
     # Loop through medias
