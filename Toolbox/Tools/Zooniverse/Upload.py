@@ -20,23 +20,61 @@ warnings.filterwarnings('ignore')
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
+def get_moving_frames(nav_data):
+    """
+    :param nav_data:
+    :return:
+    """
+    frames = []
 
-def assess_image_quality(image_path):
+    for n_idx, n in enumerate(nav_data):
+        # Get the heading diff
+        curr_head = float(n.attributes['Heading'])
+        prev_head = float(nav_data[n_idx - 1].attributes['Heading'])
+        diff_head = abs(curr_head - prev_head)
+        # Get the easting diff
+        curr_east = float(n.attributes['Eastings'])
+        prev_east = float(nav_data[n_idx - 1].attributes['Eastings'])
+        diff_east = abs(curr_east - prev_east)
+        # Get the northing diff
+        curr_north = float(n.attributes['Northings'])
+        prev_north = float(nav_data[n_idx - 1].attributes['Northings'])
+        diff_north = abs(curr_north - prev_north)
+        # Find frames that represent where the rov is moving
+        if diff_head >= 1.0 or diff_east >= 3.0 or diff_north >= 3.0:
+            frames.append(n.frame)
+
+    return frames
+
+
+def assess_image_quality(image_path, sharp_thresh=40, size_thresh=1):
     """
     :param image_path:
     :return:
     """
+    # To determine quality of image
+    quality = False
+
     # Load the image using OpenCV
     image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
 
-    # Calculate the Laplacian variance as a measure of image blurriness
-    laplacian_var = cv2.Laplacian(image, cv2.CV_64F).var()
+    # Calculate the Laplacian variance as a measure of image sharpness
+    sharpness = cv2.Laplacian(image, cv2.CV_64F).var()
+    # To catch issues with video outage
+    if sharpness >= 200:
+        sharpness = 0
 
-    # Return the calculated blurriness score
-    return laplacian_var
+    # Check image size
+    image_size = os.path.getsize(image_path) / (1024 * 1024)
+
+    # Apply threshold conditions (larger than 1mb)
+    if sharpness >= sharp_thresh and image_size >= size_thresh:
+        quality = True
+
+    return quality
 
 
-def download_image(api, media_id, frame, media_dir, threshold=60):
+def download_image(api, media_id, frame, media_dir):
     """
     :param api:
     :param media:
@@ -57,7 +95,7 @@ def download_image(api, media_id, frame, media_dir, threshold=60):
         shutil.move(temp, path)
 
     # Delete the image if it's of lower quality
-    if assess_image_quality(path) < threshold:
+    if not assess_image_quality(path):
         os.remove(path)
 
     return path
@@ -87,10 +125,10 @@ def upload(args):
 
     try:
         # Get access to the project
-        project = panoptes_client.Project.find(id=args.project_id)
+        project = panoptes_client.Project.find(id=args.zoon_project_id)
         print(f"NOTE: Connected to Zooniverse project '{project.title}' successfully")
     except:
-        print(f"ERROR: Could not access project {args.project_id}")
+        print(f"ERROR: Could not access project {args.zoon_project_id}")
         sys.exit(1)
 
     try:
@@ -101,6 +139,16 @@ def upload(args):
 
     except Exception as e:
         print(f"ERROR: Could not authenticate with provided API Token\n{e}")
+        sys.exit(1)
+
+    try:
+        # The type of localization for the project (bounding box, attributes)
+        tator_project_id = args.tator_project_id
+        project_name = api.get_project(id=tator_project_id).name
+        state_type_id = 288  # State Type (ROV)
+        state_name = api.get_state_type(state_type_id).name
+    except Exception as e:
+        print(f"ERROR: Could not find the correct localization type in project {args.tator_project_id}")
         sys.exit(1)
 
     if args.media_ids:
@@ -120,12 +168,13 @@ def upload(args):
             os.makedirs(media_dir, exist_ok=True)
             print(f"NOTE: Media ID {media_id} corresponds to {media_name}")
 
-            # Get the frames associate with localizations
-            print(f"NOTE: Found {media.num_frames} frames for media {media_name}")
+            # Get the frames associated with nav data
+            nav_data = api.get_state_list(project=tator_project_id, media_id=[media_id], type=state_type_id)
+            print(f"NOTE: Found {len(nav_data)} frames with nav data for media {media_name}")
 
-            # Subset based on what user directs
-            frames = [f for f_idx, f in enumerate(range(media.num_frames)) if f_idx % args.every_n == 0]
-            print(f"NOTE: Sampled every {args.every_n} frames ({len(frames)}) for media {media_name}")
+            # Filter out frames where there is no movement from previous frame
+            frames = get_moving_frames(nav_data)
+            print(f"NOTE: Found {len(frames)} frames ({len(nav_data)}) with movement for media {media_name}")
 
             # Download the associated frames
             print(f"NOTE: Downloading {len(frames)} frames for {media_name}")
@@ -198,8 +247,9 @@ def upload(args):
                     # Append
                     new_subjects.append(subject)
 
-                # Add the list of subjects to set, save
+                # Add the list of subjects to set
                 subject_set.add(new_subjects)
+                # Save
                 subject_set.save()
                 project.save()
 
@@ -218,7 +268,7 @@ def upload(args):
                     workflow = panoptes_client.Workflow(workflow_id)
                     workflow_name = workflow.__dict__['raw']['display_name']
                     # Add the subject set created previously
-                    print(f"NOTE: Adding subject set {subject_set.display_name} to workflow {workflow_name}")
+                    print(f"\nNOTE: Adding subject set {subject_set.display_name} to workflow {workflow_name}")
                     workflow.add_subject_sets([subject_set])
                     # Save
                     workflow.save()
@@ -241,10 +291,6 @@ def main():
 
     parser = argparse.ArgumentParser(description="Upload to Zooniverse")
 
-    parser.add_argument("--api_token", type=str,
-                        default=os.getenv('TATOR_TOKEN'),
-                        help="Tator API Token")
-
     parser.add_argument("--username", type=str,
                         default=os.getenv('ZOONIVERSE_USERNAME'),
                         help="Zooniverse username")
@@ -253,14 +299,18 @@ def main():
                         default=os.getenv('ZOONIVERSE_PASSWORD'),
                         help="Zooniverse password")
 
-    parser.add_argument("--project_id", type=int, default=21853,  # click-a-coral
+    parser.add_argument("--zoon_project_id", type=int, default=21853,  # click-a-coral
                         help="Zooniverse project ID")
+
+    parser.add_argument("--api_token", type=str,
+                        default=os.getenv('TATOR_TOKEN'),
+                        help="Tator API Token")
+
+    parser.add_argument("--tator_project_id", type=int, default=70,
+                        help="Tator Project ID")
 
     parser.add_argument("--media_ids", type=int, nargs='+',
                         help="ID for desired media(s)")
-
-    parser.add_argument("--every_n", type=int, default=10,
-                        help="Of frames with annotations, download every N")
 
     parser.add_argument("--upload", action='store_true',
                         help="Upload media to Zooniverse (debugging")
