@@ -9,6 +9,7 @@ import panoptes_client
 
 import cv2
 import pandas as pd
+from tqdm import tqdm
 
 from concurrent.futures import ThreadPoolExecutor
 
@@ -129,9 +130,10 @@ def upload(args):
             # Download the associated frames
             print(f"NOTE: Downloading {len(frames)} frames for {media_name}")
             with ThreadPoolExecutor(max_workers=80) as executor:
+                # Submit the jobs
                 paths = [executor.submit(download_image, api, media_id, frame, media_dir) for frame in frames]
-                # Contains a list of frame paths on local machine
-                paths = [future.result() for future in paths]
+                # Execute, store paths
+                paths = [future.result() for future in tqdm(paths)]
 
             # Dataframe for output
             dataframe = []
@@ -140,7 +142,6 @@ def upload(args):
 
                 # Make sure the path exists
                 if not os.path.exists(path):
-                    print(f"WARNING: Frame {os.path.basename(path)} did not meet the quality threshold")
                     continue
 
                 # Add to dataframe
@@ -158,7 +159,7 @@ def upload(args):
                                                          'Path', 'Height', 'Width'])
             # Save the dataframe
             dataframe.to_csv(f"{media_dir}\\frames.csv", index=False)
-            print(f"NOTE: Downloaded {len(dataframe)} frames for {media_name}")
+            print(f"NOTE: Downloaded {len(dataframe)} of {len(frames)} frames for {media_name}")
 
         except Exception as e:
             print(f"ERROR: Could not finish downloading media {media_id} from TATOR")
@@ -168,7 +169,6 @@ def upload(args):
         if args.upload:
             try:
                 print(f"NOTE: Uploading media {media_name} to Zooniverse")
-                # Now upload to Zooniverse
                 # Create subject set, link to project
                 subject_set = panoptes_client.SubjectSet()
                 subject_set.links.project = project
@@ -185,7 +185,7 @@ def upload(args):
                 # Create subjects from the meta
                 new_subjects = []
 
-                for filename, metadata in subject_meta.items():
+                for filename, metadata in tqdm(subject_meta.items()):
                     # Create the subject
                     subject = panoptes_client.Subject()
                     # Link subject to project
@@ -201,10 +201,31 @@ def upload(args):
                 # Add the list of subjects to set, save
                 subject_set.add(new_subjects)
                 subject_set.save()
-                subject_set = None
+                project.save()
 
             except Exception as e:
                 print(f"ERROR: Could not finish uploading media {media_id} to Zooniverse")
+                traceback.print_exc()
+                sys.exit(1)
+
+            try:
+                # Attaching the new subject set to all the active workflows
+                workflow_ids = project.__dict__['raw']['links']['active_workflows']
+
+                # If there are active workflows, link them to the next subject sets
+                for workflow_id in tqdm(workflow_ids):
+                    # Create Workflow object
+                    workflow = panoptes_client.Workflow(workflow_id)
+                    workflow_name = workflow.__dict__['raw']['display_name']
+                    # Add the subject set created previously
+                    print(f"NOTE: Adding subject set {subject_set.display_name} to workflow {workflow_name}")
+                    workflow.add_subject_sets([subject_set])
+                    # Save
+                    workflow.save()
+                    project.save()
+
+            except Exception as e:
+                print(f"ERROR: Could not link media {media_id} to project workflows")
                 traceback.print_exc()
                 sys.exit(1)
 
