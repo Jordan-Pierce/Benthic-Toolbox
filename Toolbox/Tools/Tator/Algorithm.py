@@ -31,10 +31,56 @@ warnings.filterwarnings("ignore")
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
-
-def tracker(args):
+def update_tracker(tracker, frame, scores, labels, bboxes, class_map, threshold):
     """
+    :param tracker:
+    :param frame:
+    :param scores:
+    :param labels:
+    :param bboxes:
+    :param class_map:
+    :param threshold:
+    :return:
+    """
+    # Modify the labels based on score and threshold value:
+    # Any detected label is 'Object' if score is below the threshold
+    object_class = {v: k for k, v in class_map.items()}['Object']
+    labels[np.where(scores < 0.75)] = object_class
 
+    # Reformat result
+    detections = []
+
+    for i in range(len(bboxes)):
+        detections.append([bboxes[i], scores[i], labels[i]])
+
+    # Update tracker
+    tracks = tracker.update_tracks(detections, frame=frame)
+
+    # Update result
+    updated_scores = []
+    updated_bboxes = []
+    updated_labels = []
+    track_ids = []
+
+    # Loop through tracks
+    for t_idx, track in enumerate(tracks):
+
+        if not track.get_det_conf():
+            updated_scores.append(threshold)
+            updated_bboxes.append(track.to_ltwh(orig=True))
+            updated_labels.append(track.get_det_class())
+            track_ids.append(int(track.track_id))
+        else:
+            updated_scores.append(track.get_det_conf())
+            updated_bboxes.append(track.to_ltwh(orig=True))
+            updated_labels.append(track.get_det_class())
+            track_ids.append(int(track.track_id))
+
+    return updated_scores, updated_labels, updated_bboxes, track_ids
+
+
+def algorithm(args):
+    """
     :param args:
     :return:
     """
@@ -145,25 +191,23 @@ def tracker(args):
     test_pipeline = Compose(model.cfg.test_dataloader.dataset.pipeline)
 
     # ------------------------------------------------
-    # Tracker
-    # ------------------------------------------------
-    # DeepSort object
-    deepsort = DeepSort(max_age=15,
-                        # max_iou_distance=0.5,
-                        # max_cosine_distance=0.5,
-                        n_init=3,
-                        nn_budget=None,
-                        # nms_max_overlap=.5,
-                        embedder="clip_ViT-B/32",
-                        embedder_gpu=device)
-
-    # ------------------------------------------------
     # Visualization
     # ------------------------------------------------
     visualizer = VISUALIZERS.build(model.cfg.visualizer)
     # the dataset_meta is loaded from the checkpoint and
     # then passed to the model in init_detector
     visualizer.dataset_meta = model.dataset_meta
+
+    # ------------------------------------------------
+    # Tracker
+    # ------------------------------------------------
+    if args.track:
+        # Create tracker object
+        tracker = DeepSort(max_age=15,
+                           n_init=3,
+                           nn_budget=None,
+                           embedder="clip_ViT-B/32",
+                           embedder_gpu=device)
 
     # Loop through medias
     for media_id in media_ids:
@@ -210,7 +254,7 @@ def tracker(args):
 
         if args.show_video:
             # Create a path for the predictions video
-            output_pred_path = output_video_path.split(".")[0] + "_tracking.mp4"
+            output_pred_path = output_video_path.split(".")[0] + "_algorithm.mp4"
             # To output the video with predictions super-imposed
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             video_writer = cv2.VideoWriter(output_pred_path, fourcc, video_reader.fps,
@@ -235,70 +279,40 @@ def tracker(args):
                 scores = scores[indices]
                 labels = labels[indices]
                 bboxes = bboxes[indices]
+                track_ids = [0] * len(indices)
 
-                # Modify the labels based on score and threshold value
-                # Replace the detected label if the score is below the threshold
-                object_class = {v: k for k, v in class_map.items()}['Object']
-                labels[np.where(scores < 0.75)] = object_class
+                if args.track:
+                    # If tracking, modify the detections
+                    scores, labels, bboxes, track_ids = update_tracker(tracker,
+                                                                       frame,
+                                                                       scores,
+                                                                       labels,
+                                                                       bboxes,
+                                                                       class_map,
+                                                                       args.pred_threshold)
 
-                # Reformat result
-                detections = []
-
-                for i in range(len(indices)):
-                    detections.append([bboxes[i], scores[i], labels[i]])
-
-                # Update tracker
-                tracks = deepsort.update_tracks(detections, frame=frame)
-
-                # Update result
-                updated_scores = []
-                updated_bboxes = []
-                updated_labels = []
-                track_ids = []
-
-                # Loop through tracks
-                for t_idx, track in enumerate(tracks):
-
-                    if not track.get_det_conf():
-                        updated_scores.append(args.pred_threshold)
-                        updated_bboxes.append(track.to_ltwh(orig=True))
-                        updated_labels.append(track.get_det_class())
-                        track_ids.append(int(track.track_id))
-                    else:
-                        updated_scores.append(track.get_det_conf())
-                        updated_bboxes.append(track.to_ltwh(orig=True))
-                        updated_labels.append(track.get_det_class())
-                        track_ids.append(int(track.track_id))
-
-                # Create a new data sample after filtering (for local visualization only)
-                pred_track_instances = InstanceData(metainfo=result.metainfo)
-                pred_track_instances.scores = np.array(updated_scores)
-                pred_track_instances.bboxes = np.array(updated_bboxes)
-                pred_track_instances.labels = np.array(track_ids)
-                result = DetDataSample(pred_instances=pred_track_instances)
+                # Create a new 'result' after filtering
+                # Only used for local visualizations
+                result = InstanceData(metainfo=result.metainfo)
+                result.scores = np.array(scores)
+                result.bboxes = np.array(bboxes)
+                result.labels = np.array(track_ids)
+                result = DetDataSample(pred_instances=result)
 
                 # Record the predictions in tator format
-                for i_idx in range(len(updated_bboxes)):
+                for i_idx in range(len(bboxes)):
 
                     # Score, Label for tator
-                    score = updated_scores[i_idx]
-                    label = class_map[updated_labels[i_idx]]
-
-                    # Redundant sanity check
-                    if score <= args.pred_threshold:
-                        continue
-
-                    # TODO do something here in the future
-                    if score > 0.0:
-                        scientific = "Not Set"
-                    else:
-                        scientific = "Not Set"
+                    score = round(float(scores[i_idx]), 3)
+                    label = class_map[labels[i_idx]]
+                    # Update this with multi-category
+                    scientific = "Not Set"
 
                     # Local archive format
-                    xmin = int(updated_bboxes[i_idx][0])
-                    ymin = int(updated_bboxes[i_idx][1])
-                    xmax = int(updated_bboxes[i_idx][2])
-                    ymax = int(updated_bboxes[i_idx][3])
+                    xmin = int(bboxes[i_idx][0])
+                    ymin = int(bboxes[i_idx][1])
+                    xmax = int(bboxes[i_idx][2])
+                    ymax = int(bboxes[i_idx][3])
 
                     # Tator format of bounding boxes
                     x = float(xmin / video_reader.width)
@@ -331,15 +345,16 @@ def tracker(args):
                     localizations.append(loc)
                     predictions.append(pred)
 
-                # Showing video
                 if args.show_video:
-
+                    # Showing video
                     try:
-                        # Update the classes for tracking objects
-                        for (l, t) in zip(labels, track_ids):
-                            class_tracker[f'{class_map[l]} {str(t)}'] = t
 
-                        visualizer.dataset_meta['classes'] = list(class_tracker.keys())
+                        if args.track:
+                            # Update the classes for tracking objects
+                            for (l, t) in zip(labels, track_ids):
+                                class_tracker[f'{class_map[l]} {str(t)}'] = t
+                            # Store tracked object IDs for local visualization
+                            visualizer.dataset_meta['classes'] = list(class_tracker.keys())
 
                         # Add predictions to frame
                         visualizer.add_datasample(
@@ -348,7 +363,7 @@ def tracker(args):
                             data_sample=result,
                             draw_gt=False,
                             show=False,
-                            wait_time=0.1,
+                            wait_time=0.01,
                             pred_score_thr=args.pred_threshold)
                     except:
                         pass
@@ -397,6 +412,7 @@ def tracker(args):
                 localization_ids.extend(response.id)
             print(f"NOTE: Successfully created {len(localization_ids)} localizations on {media.name}!")
 
+        if args.upload and args.track:
             # Associate the localization ids with track ids
             track_ids = [l['track_id'] for l in localizations]
             track_ids = np.array(list(zip(track_ids, localization_ids)))
@@ -405,7 +421,6 @@ def tracker(args):
             print(f"NOTE: Uploading {num_tracks} tracks on {media.name}...")
             states = []
             for track_id in np.unique(track_ids.T[0]):
-
                 state = {'type': state_type_id,
                          'version': layer_type_id,
                          'localization_ids': track_ids.T[1][np.where(track_ids.T[0] == track_id)].tolist(),
@@ -432,7 +447,7 @@ def main():
 
     """
 
-    parser = argparse.ArgumentParser(description="Detector")
+    parser = argparse.ArgumentParser(description="Algorithm")
 
     parser.add_argument("--api_token", type=str,
                         default=os.getenv('TATOR_TOKEN'),
@@ -447,8 +462,11 @@ def main():
     parser.add_argument("--run_dir", type=str, required=True,
                         help="Directory containing the run")
 
+    parser.add_argument('--track', action='store_true',
+                        help='Track objects, else just detect them')
+
     parser.add_argument("--epoch", type=int, required=True,
-                        help="Epoch checkpoint to use")
+                        help="Epoch N checkpoint to use")
 
     parser.add_argument("--every_n", type=int, default=30,
                         help="Make predictions on every N frames")
@@ -478,7 +496,7 @@ def main():
         os.environ['LOCAL_RANK'] = '0'
 
     try:
-        tracker(args)
+        algorithm(args)
         print("Done.")
 
     except Exception as e:

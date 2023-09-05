@@ -213,7 +213,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train")
 
     parser.add_argument("--config", type=str,
-                        default="./configs/mmyolo/yolov8/yolov8_m_syncbn_fast_8xb16-500e_coco.py",
+                        default="./configs/mmyolo/yolov8/yolov8_m_mask-refine_syncbn_fast_8xb16-500e_coco.py",
                         help="Path to model config file")
 
     parser.add_argument("--train", type=str, required=True,
@@ -240,7 +240,7 @@ def main():
     parser.add_argument('--max_epochs', type=int, default=30,
                         help='Total number of times model sees every sample in training set')
 
-    parser.add_argument('--lr', type=float, default=0.0075,
+    parser.add_argument('--lr', type=float, default=0.01,
                         help='The amount to adjust model parameters by during back-prop')
 
     parser.add_argument('--launcher', choices=['none', 'pytorch', 'slurm', 'mpi'],
