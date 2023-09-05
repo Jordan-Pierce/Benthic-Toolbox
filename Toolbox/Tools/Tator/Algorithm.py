@@ -4,12 +4,15 @@ import glob
 import json
 import argparse
 import traceback
+from pathlib import Path
 
 import cv2
 import torch
 import tator
 import numpy as np
 import pandas as pd
+
+from boxmot import DeepOCSORT
 
 import mmcv
 from mmcv.transforms import Compose
@@ -21,8 +24,6 @@ from mmengine.structures import InstanceData
 from mmdet.registry import VISUALIZERS
 from mmengine.utils import track_iter_progress
 
-from deep_sort_realtime.deepsort_tracker import DeepSort
-
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -31,61 +32,13 @@ warnings.filterwarnings("ignore")
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
-def update_tracker(tracker, frame, scores, labels, bboxes, class_map, threshold):
-    """
-    :param tracker:
-    :param frame:
-    :param scores:
-    :param labels:
-    :param bboxes:
-    :param class_map:
-    :param threshold:
-    :return:
-    """
-    # Modify the labels based on score and threshold value:
-    # Any detected label is 'Object' if score is below the threshold
-    object_class = {v: k for k, v in class_map.items()}['Object']
-    labels[np.where(scores < 0.75)] = object_class
-
-    # Reformat result
-    detections = []
-
-    for i in range(len(bboxes)):
-        detections.append([bboxes[i], scores[i], labels[i]])
-
-    # Update tracker
-    tracks = tracker.update_tracks(detections, frame=frame)
-
-    # Update result
-    updated_scores = []
-    updated_bboxes = []
-    updated_labels = []
-    track_ids = []
-
-    # Loop through tracks
-    for t_idx, track in enumerate(tracks):
-
-        if not track.get_det_conf():
-            updated_scores.append(threshold)
-            updated_bboxes.append(track.to_ltwh(orig=True))
-            updated_labels.append(track.get_det_class())
-            track_ids.append(int(track.track_id))
-        else:
-            updated_scores.append(track.get_det_conf())
-            updated_bboxes.append(track.to_ltwh(orig=True))
-            updated_labels.append(track.get_det_class())
-            track_ids.append(int(track.track_id))
-
-    return tracker, updated_scores, updated_labels, updated_bboxes, track_ids
-
-
 def algorithm(args):
     """
     :param args:
     :return:
     """
     print("\n###############################################")
-    print("Tracker")
+    print("Algorithm")
     print("###############################################\n")
 
     try:
@@ -187,7 +140,7 @@ def algorithm(args):
                               nms_pre=30000,
                               score_thr=args.pred_threshold)
 
-    model.cfg.test_dataloader.dataset.pipeline[0].type = 'LoadImageFromNDArray'
+    model.cfg.test_dataloader.dataset.pipeline[0].type = 'mmdet.LoadImageFromNDArray'
     test_pipeline = Compose(model.cfg.test_dataloader.dataset.pipeline)
 
     # ------------------------------------------------
@@ -203,11 +156,10 @@ def algorithm(args):
     # ------------------------------------------------
     if args.track:
         # Create tracker object
-        tracker = DeepSort(max_age=15,
-                           n_init=3,
-                           nn_budget=None,
-                           embedder="clip_ViT-B/32",
-                           embedder_gpu=device)
+        tracker = DeepOCSORT(model_weights=Path('osnet_x0_25_msmt17.pt'),
+                             device='cuda:0',
+                             det_thresh=args.pred_threshold,
+                             fp16=True)
 
     # Loop through medias
     for media_id in media_ids:
@@ -219,14 +171,14 @@ def algorithm(args):
         localizations = []
         # For local archive
         predictions = []
-        # For visualization (locally)
+        # (Only used for local visualizations)
         class_tracker = {}
 
         try:
             # Get the video handler
             media = api.get_media(media_id)
             ext = media.name.split(".")[-1]
-            output_media_dir = f"{output_dir}Detector_{media_id}\\"
+            output_media_dir = f"{output_dir}Algorithm_{media_id}\\"
             output_video_path = f"{output_media_dir}{media_id}.{ext}"
             os.makedirs(output_media_dir, exist_ok=True)
             print(f"NOTE: Downloading {media.name}...")
@@ -279,25 +231,27 @@ def algorithm(args):
                 scores = scores[indices]
                 labels = labels[indices]
                 bboxes = bboxes[indices]
-                track_ids = [0] * len(indices)
+                # Placeholder if not tracking
+                track_ids = np.array([0] * len(indices))
 
                 if args.track:
-                    # If tracking, modify the detections based on tracker
-                    tracker, scores, labels, bboxes, track_ids = update_tracker(tracker,
-                                                                                frame,
-                                                                                scores,
-                                                                                labels,
-                                                                                bboxes,
-                                                                                class_map,
-                                                                                args.pred_threshold)
+                    # Input to tracker has to be N X (x, y, x, y, scores, labels)
+                    detections = np.concatenate((bboxes, scores[:, np.newaxis], labels[:, np.newaxis]), axis=1)
+                    # Pass to tracker to update
+                    tracks = tracker.update(detections, frame)
+                    # Return as N X (x, y, x, y, id, scores, labels, indices of true detections)
+                    bboxes = tracks[:, 0:4].astype('int')
+                    track_ids = tracks[:, 4].astype('int')
+                    scores = tracks[:, 5]
+                    labels = tracks[:, 6].astype('int')
 
-                # Create a new 'result' after filtering
+                # Create a new 'result' after filtering, tracking
                 # (Only used for local visualizations)
-                result = InstanceData(metainfo=result.metainfo)
-                result.scores = np.array(scores)
-                result.bboxes = np.array(bboxes)
-                result.labels = np.array(track_ids)
-                result = DetDataSample(pred_instances=result)
+                result_mod = InstanceData(metainfo=result.metainfo)
+                result_mod.scores = torch.from_numpy(scores).to(device)
+                result_mod.bboxes = torch.from_numpy(bboxes).to(device)
+                result_mod.labels = torch.from_numpy(track_ids).to(device)
+                result = DetDataSample(pred_instances=result_mod)
 
                 # Record the predictions in tator format
                 for i_idx in range(len(bboxes)):
