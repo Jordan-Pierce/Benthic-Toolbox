@@ -1,26 +1,23 @@
 import os
-import shutil
 import sys
+import json
+import shutil
+import datetime
 import argparse
 import traceback
 
-import json
-import glob
-
 import matplotlib
-import requests
-
 import numpy as np
-import matplotlib.cm as cm
-
-from mmengine.config import Config
-from mmengine.logging import print_log
-from mmengine.registry import RUNNERS
-from mmengine.runner import Runner
 
 from mmdet.utils import setup_cache_size_limit_of_dynamo
+from mmengine.config import Config
+from mmengine.runner import Runner
 
-import datetime
+# MMDet
+from mmengine.registry import RUNNERS as MMDET_RUNNERS
+
+# MMYolo
+from mmyolo.registry import RUNNERS as MMYOLO_RUNNERS
 
 
 # ------------------------------------------------------------------------------------------------------------------
@@ -138,8 +135,12 @@ def train(args):
     cfg.data_root = ""
 
     print(f"NOTE: Number of class categories {len(class_map)}")
-    # Number of classes
-    cfg.model['bbox_head']['num_classes'] = len(class_map)
+    # Number of classes (MMYolo, or MMDet)
+    if 'head_module' in cfg.model['bbox_head']:
+        cfg.model['bbox_head']['head_module']['num_classes'] = len(class_map)
+        cfg.model['train_cfg']['assigner']['num_classes'] = len(class_map)
+    else:
+        cfg.model['bbox_head']['num_classes'] = len(class_map)
 
     print(f"NOTE: Creating train dataloader")
     cfg.train_cfg['max_epochs'] = max_epochs
@@ -187,7 +188,10 @@ def train(args):
         runner = Runner.from_cfg(cfg)
     else:
         # Build customized runner from the registry
-        runner = RUNNERS.build(cfg)
+        if 'yolo' in config_name.lower():
+            runner = MMYOLO_RUNNERS.build(cfg)
+        else:
+            runner = MMDET_RUNNERS.build(cfg)
 
     try:
         print("NOTE: Starting training")
@@ -209,7 +213,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train")
 
     parser.add_argument("--config", type=str,
-                        default="./configs/rtmdet/rtmdet_m_8xb32-300e_coco.py",
+                        default="./configs/mmyolo/yolov8/yolov8_m_syncbn_fast_8xb16-500e_coco.py",
                         help="Path to model config file")
 
     parser.add_argument("--train", type=str, required=True,
@@ -230,7 +234,7 @@ def main():
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Directory to save logs and models')
 
-    parser.add_argument('--batch_size', type=int, default=8,
+    parser.add_argument('--batch_size', type=int, default=16,
                         help='Number of samples to pass model in a single batch (GPU dependent')
 
     parser.add_argument('--max_epochs', type=int, default=30,
