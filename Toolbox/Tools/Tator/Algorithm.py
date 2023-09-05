@@ -292,7 +292,7 @@ def algorithm(args):
                                                                                 args.pred_threshold)
 
                 # Create a new 'result' after filtering
-                # Only used for local visualizations
+                # (Only used for local visualizations)
                 result = InstanceData(metainfo=result.metainfo)
                 result.scores = np.array(scores)
                 result.bboxes = np.array(bboxes)
@@ -350,12 +350,13 @@ def algorithm(args):
 
                         if args.track:
                             # Update the classes for tracking objects
+                            # (Only used for local visualizations)
                             for (l, t) in zip(labels, track_ids):
                                 class_tracker[f'{class_map[l]} {str(t)}'] = t
-                            # Store tracked object IDs for local visualization
+                            # Stash tracked object IDs in visualizer metadata
                             visualizer.dataset_meta['classes'] = list(class_tracker.keys())
 
-                        # Add predictions to frame
+                        # Add result to frame
                         visualizer.add_datasample(
                             name='video',
                             image=frame,
