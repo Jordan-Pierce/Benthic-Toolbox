@@ -142,7 +142,6 @@ def train(args):
     cfg.model['bbox_head']['num_classes'] = len(class_map)
 
     print(f"NOTE: Creating train dataloader")
-    # Data Loaders
     cfg.train_cfg['max_epochs'] = max_epochs
     cfg.train_cfg['val_interval'] = val_interval
     cfg.train_dataloader['batch_size'] = batch_size
@@ -152,7 +151,6 @@ def train(args):
     cfg.train_dataloader['dataset']['metainfo'] = metainfo
 
     print(f"NOTE: Creating valid dataloader")
-    # Valid dataloader
     cfg.val_dataloader['batch_size'] = batch_size
     cfg.val_dataloader['dataset']['data_root'] = ""
     cfg.val_dataloader['dataset']['ann_file'] = valid_annotations
@@ -160,7 +158,6 @@ def train(args):
     cfg.val_dataloader['dataset']['metainfo'] = metainfo
 
     print(f"NOTE: Creating test dataloader")
-    # Test dataloader
     cfg.test_dataloader = cfg.val_dataloader
     cfg.test_dataloader['dataset']['ann_file'] = test_annotations
 
@@ -212,7 +209,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train")
 
     parser.add_argument("--config", type=str,
-                        default="./configs/rtmdet/rtmdet_tiny_8xb32-300e_coco.py",
+                        default="./configs/rtmdet/rtmdet_m_8xb32-300e_coco.py",
                         help="Path to model config file")
 
     parser.add_argument("--train", type=str, required=True,
@@ -233,7 +230,7 @@ def main():
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Directory to save logs and models')
 
-    parser.add_argument('--batch_size', type=int, default=16,
+    parser.add_argument('--batch_size', type=int, default=8,
                         help='Number of samples to pass model in a single batch (GPU dependent')
 
     parser.add_argument('--max_epochs', type=int, default=30,
