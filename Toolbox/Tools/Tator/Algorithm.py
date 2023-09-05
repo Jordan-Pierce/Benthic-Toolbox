@@ -76,7 +76,7 @@ def update_tracker(tracker, frame, scores, labels, bboxes, class_map, threshold)
             updated_labels.append(track.get_det_class())
             track_ids.append(int(track.track_id))
 
-    return updated_scores, updated_labels, updated_bboxes, track_ids
+    return tracker, updated_scores, updated_labels, updated_bboxes, track_ids
 
 
 def algorithm(args):
@@ -282,14 +282,14 @@ def algorithm(args):
                 track_ids = [0] * len(indices)
 
                 if args.track:
-                    # If tracking, modify the detections
-                    scores, labels, bboxes, track_ids = update_tracker(tracker,
-                                                                       frame,
-                                                                       scores,
-                                                                       labels,
-                                                                       bboxes,
-                                                                       class_map,
-                                                                       args.pred_threshold)
+                    # If tracking, modify the detections based on tracker
+                    tracker, scores, labels, bboxes, track_ids = update_tracker(tracker,
+                                                                                frame,
+                                                                                scores,
+                                                                                labels,
+                                                                                bboxes,
+                                                                                class_map,
+                                                                                args.pred_threshold)
 
                 # Create a new 'result' after filtering
                 # Only used for local visualizations
@@ -301,7 +301,6 @@ def algorithm(args):
 
                 # Record the predictions in tator format
                 for i_idx in range(len(bboxes)):
-
                     # Score, Label for tator
                     score = round(float(scores[i_idx]), 3)
                     label = class_map[labels[i_idx]]
