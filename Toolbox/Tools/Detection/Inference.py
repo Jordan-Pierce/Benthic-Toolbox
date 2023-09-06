@@ -2,6 +2,7 @@ import os
 import sys
 import glob
 import json
+import datetime
 import argparse
 import traceback
 
@@ -17,6 +18,16 @@ warnings.filterwarnings('ignore')
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
+def get_now():
+    """
+    :return:
+    """
+    # Get the current datetime
+    now = datetime.datetime.now()
+    now = now.strftime("%Y-%m-%d_%H-%M-%S")
+    return now
+
+
 def merge_predictions(prediction_paths, class_map, output_dir):
     """
     :param annotation_paths:
@@ -114,7 +125,7 @@ def inference(args):
     # Directory where media is stored
     if os.path.exists(args.media_dir):
         media_dir = args.media_dir
-        media_name = os.path.basename(media_dir)
+        media_id = os.path.basename(media_dir)
     else:
         print(f"ERROR: Media directory provided doesn't exist; please check input")
         sys.exit(1)
@@ -123,13 +134,13 @@ def inference(args):
     if os.path.exists(f"{media_dir}\\frames\\"):
         frame_dir = f"{media_dir}\\frames\\"
         frame_paths = glob.glob(f"{frame_dir}*.*")
-        print(f"NOTE: Found {len(frame_paths)} frames in {media_name}")
+        print(f"NOTE: Found {len(frame_paths)} frames in {media_id}")
     else:
         print(f"ERROR: Could not locate 'frames' directory in {media_dir}")
         sys.exit(1)
 
     # Output directory
-    output_dir = f"{args.output_dir}\\{media_name}_{run_name}\\"
+    output_dir = f"{args.output_dir}\\Inference_{get_now()}_{media_id}\\"
     os.makedirs(output_dir, exist_ok=True)
 
     # Either GPU or CPU
@@ -150,8 +161,8 @@ def inference(args):
         sys.exit(1)
 
     try:
-        print(f"NOTE: Making predictions for {media_name}")
         # Dict of predictions, and visualization
+        print(f"NOTE: Making predictions for {media_id}")
         results = inferencer(frame_paths,
                              out_dir=output_dir,
                              no_save_pred=False,
@@ -161,7 +172,7 @@ def inference(args):
         merge_predictions(glob.glob(f"{output_dir}preds\\*.json"), class_map, output_dir)
 
     except Exception as e:
-        print(f"ERROR: Could not make prediction on {media_name}\n{e}")
+        print(f"ERROR: Could not make prediction on {media_id}\n{e}")
         traceback.print_exc()
 
 

@@ -213,7 +213,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train")
 
     parser.add_argument("--config", type=str,
-                        default="./configs/mmyolo/yolov8/yolov8_m_mask-refine_syncbn_fast_8xb16-500e_coco.py",
+                        default="./configs/mmyolo/rtmdet/rtmdet_m_syncbn_fast_8xb32-300e_coco.py",
                         help="Path to model config file")
 
     parser.add_argument("--train", type=str, required=True,

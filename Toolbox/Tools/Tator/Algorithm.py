@@ -2,6 +2,7 @@ import os
 import sys
 import glob
 import json
+import datetime
 import argparse
 import traceback
 from pathlib import Path
@@ -12,7 +13,7 @@ import tator
 import numpy as np
 import pandas as pd
 
-from boxmot import DeepOCSORT
+from boxmot import BoTSORT
 
 import mmcv
 from mmcv.transforms import Compose
@@ -32,6 +33,16 @@ warnings.filterwarnings("ignore")
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
+def get_now():
+    """
+    :return:
+    """
+    # Get the current datetime
+    now = datetime.datetime.now()
+    now = now.strftime("%Y-%m-%d_%H-%M-%S")
+    return now
+
+
 def algorithm(args):
     """
     :param args:
@@ -156,10 +167,9 @@ def algorithm(args):
     # ------------------------------------------------
     if args.track:
         # Create tracker object
-        tracker = DeepOCSORT(model_weights=Path('osnet_x0_25_msmt17.pt'),
-                             device='cuda:0',
-                             det_thresh=args.pred_threshold,
-                             fp16=True)
+        tracker = BoTSORT(model_weights=Path("./Cache/osnet_x0_25_msmt17.pt"),
+                          fp16=True,
+                          device=device)
 
     # Loop through medias
     for media_id in media_ids:
@@ -178,7 +188,7 @@ def algorithm(args):
             # Get the video handler
             media = api.get_media(media_id)
             ext = media.name.split(".")[-1]
-            output_media_dir = f"{output_dir}Algorithm_{media_id}\\"
+            output_media_dir = f"{output_dir}Algorithm_{get_now()}_{media_id}\\"
             output_video_path = f"{output_media_dir}{media_id}.{ext}"
             os.makedirs(output_media_dir, exist_ok=True)
             print(f"NOTE: Downloading {media.name}...")
@@ -229,7 +239,7 @@ def algorithm(args):
                 # Filter based on threshold
                 indices = np.where(scores >= args.pred_threshold)[0]
                 scores = scores[indices]
-                labels = labels[indices]
+                labels = np.zeros_like(labels[indices])
                 bboxes = bboxes[indices]
                 # Placeholder if not tracking
                 track_ids = np.array([0] * len(indices))
@@ -239,19 +249,13 @@ def algorithm(args):
                     detections = np.concatenate((bboxes, scores[:, np.newaxis], labels[:, np.newaxis]), axis=1)
                     # Pass to tracker to update
                     tracks = tracker.update(detections, frame)
-                    # Return as N X (x, y, x, y, id, scores, labels, indices of true detections)
-                    bboxes = tracks[:, 0:4].astype('int')
-                    track_ids = tracks[:, 4].astype('int')
-                    scores = tracks[:, 5]
-                    labels = tracks[:, 6].astype('int')
 
-                # Create a new 'result' after filtering, tracking
-                # (Only used for local visualizations)
-                result_mod = InstanceData(metainfo=result.metainfo)
-                result_mod.scores = torch.from_numpy(scores).to(device)
-                result_mod.bboxes = torch.from_numpy(bboxes).to(device)
-                result_mod.labels = torch.from_numpy(track_ids).to(device)
-                result = DetDataSample(pred_instances=result_mod)
+                    if len(tracks):
+                        # Return as N X (x, y, x, y, id, scores, labels, indices of true detections)
+                        bboxes = tracks[:, 0:4].astype('int')
+                        track_ids = tracks[:, 4].astype('int')
+                        scores = tracks[:, 5]
+                        labels = tracks[:, 6].astype('int')
 
                 # Record the predictions in tator format
                 for i_idx in range(len(bboxes)):
@@ -290,7 +294,6 @@ def algorithm(args):
                                'Needs Review': True,
                                'Score': score}
                            }
-
                     # For local archive
                     pred = [f_idx, label, score, xmin, ymin, xmax, ymax]
 
@@ -299,17 +302,23 @@ def algorithm(args):
                     predictions.append(pred)
 
                 if args.show_video:
-                    # Showing video
+                    # Create a new 'result' after filtering, tracking
+                    # (Only used for local visualizations)
+                    result_mod = InstanceData(metainfo=result.metainfo)
+                    result_mod.scores = torch.from_numpy(scores).to(device)
+                    result_mod.bboxes = torch.from_numpy(bboxes).to(device)
+                    result_mod.labels = torch.from_numpy(track_ids).to(device)
+                    result = DetDataSample(pred_instances=result_mod)
+
+                    if args.track:
+                        # Update the classes for tracking objects
+                        # (Only used for local visualizations)
+                        for (l, t) in zip(labels, track_ids):
+                            class_tracker[f'{class_map[l]} {str(t)}'] = t
+                        # Stash tracked object IDs in visualizer metadata
+                        visualizer.dataset_meta['classes'] = list(class_tracker.keys())
+
                     try:
-
-                        if args.track:
-                            # Update the classes for tracking objects
-                            # (Only used for local visualizations)
-                            for (l, t) in zip(labels, track_ids):
-                                class_tracker[f'{class_map[l]} {str(t)}'] = t
-                            # Stash tracked object IDs in visualizer metadata
-                            visualizer.dataset_meta['classes'] = list(class_tracker.keys())
-
                         # Add result to frame
                         visualizer.add_datasample(
                             name='video',
