@@ -13,7 +13,7 @@ import tator
 import numpy as np
 import pandas as pd
 
-from boxmot import BoTSORT
+from boxmot import BYTETracker
 
 import mmcv
 from mmcv.transforms import Compose
@@ -22,7 +22,7 @@ from mmdet.apis import inference_detector
 from mmdet.structures import DetDataSample
 from mmengine.structures import InstanceData
 
-from mmdet.registry import VISUALIZERS
+from mmyolo.registry import VISUALIZERS
 from mmengine.utils import track_iter_progress
 
 import warnings
@@ -167,9 +167,10 @@ def algorithm(args):
     # ------------------------------------------------
     if args.track:
         # Create tracker object
-        tracker = BoTSORT(model_weights=Path("./Cache/osnet_x0_25_msmt17.pt"),
-                          fp16=True,
-                          device=device)
+        print("NOTE: Tracking enabled")
+        tracker = BYTETracker(track_thresh=args.pred_threshold * 1.1,
+                              match_thresh=.9,
+                              frame_rate=30//args.every_n)
 
     # Loop through medias
     for media_id in media_ids:
@@ -181,8 +182,6 @@ def algorithm(args):
         localizations = []
         # For local archive
         predictions = []
-        # (Only used for local visualizations)
-        class_tracker = {}
 
         try:
             # Get the video handler
@@ -241,6 +240,7 @@ def algorithm(args):
                 scores = scores[indices]
                 labels = np.zeros_like(labels[indices])
                 bboxes = bboxes[indices]
+
                 # Placeholder if not tracking
                 track_ids = np.array([0] * len(indices))
 
@@ -256,6 +256,11 @@ def algorithm(args):
                         track_ids = tracks[:, 4].astype('int')
                         scores = tracks[:, 5]
                         labels = tracks[:, 6].astype('int')
+                    else:
+                        bboxes = np.array([])
+                        track_ids = np.array([])
+                        scores = np.array([])
+                        labels = np.array([])
 
                 # Record the predictions in tator format
                 for i_idx in range(len(bboxes)):
@@ -304,6 +309,7 @@ def algorithm(args):
                 if args.show_video:
                     # Create a new 'result' after filtering, tracking
                     # (Only used for local visualizations)
+                    track_ids -= 1
                     result_mod = InstanceData(metainfo=result.metainfo)
                     result_mod.scores = torch.from_numpy(scores).to(device)
                     result_mod.bboxes = torch.from_numpy(bboxes).to(device)
@@ -311,12 +317,15 @@ def algorithm(args):
                     result = DetDataSample(pred_instances=result_mod)
 
                     if args.track:
-                        # Update the classes for tracking objects
-                        # (Only used for local visualizations)
-                        for (l, t) in zip(labels, track_ids):
-                            class_tracker[f'{class_map[l]} {str(t)}'] = t
                         # Stash tracked object IDs in visualizer metadata
-                        visualizer.dataset_meta['classes'] = list(class_tracker.keys())
+                        # (Only used for local visualizations)
+                        all_tracks = len(tracker.tracked_stracks) + \
+                                     len(tracker.removed_stracks) + \
+                                     len(tracker.lost_stracks)
+
+                        object_tracker = np.arange(0, all_tracks)
+                        print(f" Tracking: {[i for i in track_ids]}")
+                        visualizer.dataset_meta['classes'] = object_tracker.astype(str)
 
                     try:
                         # Add result to frame
@@ -441,7 +450,7 @@ def main():
                         help='Prediction confidence threshold')
 
     parser.add_argument('--nms_threshold', type=float, default=0.65,
-                        help='Non-maximum suppression threshold (low is conservative')
+                        help='Non-maximum suppression threshold (low is conservative)')
 
     parser.add_argument('--show_video', action='store_true',
                         help='Show video, and save it to the predictions directory')
