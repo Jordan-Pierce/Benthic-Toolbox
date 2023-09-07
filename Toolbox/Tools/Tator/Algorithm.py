@@ -324,8 +324,9 @@ def algorithm(args):
                                      len(tracker.lost_stracks)
 
                         object_tracker = np.arange(0, all_tracks)
+                        object_tracker = [f'OBJ {i}' for i in object_tracker]
                         print(f" Tracking: {[i for i in track_ids]}")
-                        visualizer.dataset_meta['classes'] = object_tracker.astype(str)
+                        visualizer.dataset_meta['classes'] = object_tracker
 
                     try:
                         # Add result to frame
