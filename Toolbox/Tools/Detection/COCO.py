@@ -230,15 +230,20 @@ def coco(args):
     test_annotations = concat_annotations(args.test_files)
 
     # Filter based on list
-    if args.separate:
-        train_annotations[column_name] = train_annotations[column_name].apply(modify_column, args=(args.separate,))
-        valid_annotations[column_name] = valid_annotations[column_name].apply(modify_column, args=(args.separate,))
-        test_annotations[column_name] = test_annotations[column_name].apply(modify_column, args=(args.separate,))
+    if args.isolate:
+        train_annotations[column_name] = train_annotations[column_name].apply(modify_column, args=(args.isolate,))
+        valid_annotations[column_name] = valid_annotations[column_name].apply(modify_column, args=(args.isolate,))
+        test_annotations[column_name] = test_annotations[column_name].apply(modify_column, args=(args.isolate,))
 
     if args.single_object:
         train_annotations[column_name] = 'Object'
         valid_annotations[column_name] = 'Object'
         test_annotations[column_name] = 'Object'
+
+    if args.only_include:
+        train_annotations = train_annotations[train_annotations[column_name].isin(args.only_include)]
+        valid_annotations = valid_annotations[valid_annotations[column_name].isin(args.only_include)]
+        test_annotations = test_annotations[test_annotations[column_name].isin(args.only_include)]
 
     # Combine
     annotations = pd.concat((train_annotations, valid_annotations, test_annotations))
@@ -294,11 +299,14 @@ def main():
     parser.add_argument("--column_name", type=str, default='ScientificName',
                         help="Label column to use; either ScientificName or Mapped")
 
-    parser.add_argument("--separate", type=str, nargs="+",
-                        help="A list of class categories to separate out as their own class categories")
+    parser.add_argument("--isolate", type=str, nargs="+",
+                        help="A list of class categories to isolate and subset from the whole dataset")
 
     parser.add_argument("--single_object", action='store_true',
                         help="Single 'Object' detector")
+
+    parser.add_argument("--only_include", type=str, nargs="+",
+                        help="A list of class categories to include and subset from the whole dataset")
 
     parser.add_argument("--plot_n_samples", type=int, default=15,
                         help="Plot N samples to show COCO labels on images")

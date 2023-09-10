@@ -234,8 +234,8 @@ def main():
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Directory to save logs and models')
 
-    parser.add_argument('--batch_size', type=int, default=16,
-                        help='Number of samples to pass model in a single batch (GPU dependent')
+    parser.add_argument('--batch_size', type=int, default=8,
+                        help='Number of samples to pass model in a single batch (GPU dependent)')
 
     parser.add_argument('--max_epochs', type=int, default=30,
                         help='Total number of times model sees every sample in training set')

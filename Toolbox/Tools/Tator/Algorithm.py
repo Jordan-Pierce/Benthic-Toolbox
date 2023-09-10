@@ -5,25 +5,30 @@ import json
 import datetime
 import argparse
 import traceback
-from pathlib import Path
+import requests
 
 import cv2
 import torch
 import tator
+import random
 import numpy as np
 import pandas as pd
-
-from boxmot import BYTETracker
 
 import mmcv
 from mmcv.transforms import Compose
 from mmdet.apis import init_detector
 from mmdet.apis import inference_detector
+from mmdet.structures import TrackDataSample
 from mmdet.structures import DetDataSample
+from mmengine.structures import PixelData
 from mmengine.structures import InstanceData
-
 from mmyolo.registry import VISUALIZERS
+
 from mmengine.utils import track_iter_progress
+
+from boxmot import BYTETracker
+
+from Toolbox.Tools.SAM import *
 
 import warnings
 
@@ -41,6 +46,64 @@ def get_now():
     now = datetime.datetime.now()
     now = now.strftime("%Y-%m-%d_%H-%M-%S")
     return now
+
+
+def get_color(index):
+    """
+    :param index:
+    :return:
+    """
+    # Set the random seed to ensure consistent colors for the same index
+    random.seed((42, index))
+
+    # Generate random RGB values
+    red = random.randint(0, 255)
+    green = random.randint(0, 255)
+    blue = random.randint(0, 255)
+
+    return (red, green, blue)
+
+
+def get_tracks(frame, scores, bboxes, labels, tracker):
+    """
+    :param scores:
+    :param bboxes:
+    :param labels:
+    :param tracker:
+    :return:
+    """
+    # Input to tracker has to be N X (x, y, x, y, scores, labels)
+    detections = np.concatenate((bboxes, scores[:, np.newaxis], labels[:, np.newaxis]), axis=1)
+
+    # Pass to tracker to update
+    tracks = tracker.update(detections, frame)
+
+    if len(tracks):
+        # Return as N X (x, y, x, y, id, scores, labels, indices of true detections)
+        scores = tracks[:, 5]
+        bboxes = tracks[:, 0:4].astype('int')
+        labels = tracks[:, 6].astype('int')
+        track_ids = tracks[:, 4].astype('int')
+    else:
+        # Nothing was tracked, return Nones
+        scores = np.array([])
+        bboxes = np.array([])
+        labels = np.array([])
+        track_ids = np.array([])
+
+    return scores, bboxes, labels, track_ids, tracker
+
+
+def get_num_tracks(tracker):
+    """
+    :param tracker:
+    :return:
+    """
+    num_tracks = len(tracker.tracked_stracks) + \
+                 len(tracker.removed_stracks) + \
+                 len(tracker.lost_stracks)
+
+    return num_tracks
 
 
 def algorithm(args):
@@ -157,32 +220,38 @@ def algorithm(args):
     # ------------------------------------------------
     # Visualization
     # ------------------------------------------------
+    # Create the local visualizer from cfg
     visualizer = VISUALIZERS.build(model.cfg.visualizer)
-    # the dataset_meta is loaded from the checkpoint and
-    # then passed to the model in init_detector
-    visualizer.dataset_meta = model.dataset_meta
 
     # ------------------------------------------------
-    # Tracker
+    # Track
     # ------------------------------------------------
     if args.track:
         # Create tracker object
         print("NOTE: Tracking enabled")
         tracker = BYTETracker(track_thresh=args.pred_threshold * 1.1,
                               match_thresh=.9,
-                              frame_rate=30//args.every_n)
+                              frame_rate=30 // args.every_n)
+
+    # ------------------------------------------------
+    # Segment
+    # ------------------------------------------------
+    if args.segment:
+        # Create SAM predictor object
+        print("NOTE: Segmenting enabled")
+        sam_predictor = get_sam_predictor("vit_l", device)
 
     # Loop through medias
     for media_id in media_ids:
 
-        # ------------------------------------------------
-        # Download media
-        # ------------------------------------------------
         # For upload
         localizations = []
         # For local archive
         predictions = []
 
+        # ------------------------------------------------
+        # Download media
+        # ------------------------------------------------
         try:
             # Get the video handler
             media = api.get_media(media_id)
@@ -232,35 +301,32 @@ def algorithm(args):
 
                 # Parse out predictions
                 scores = result.pred_instances.cpu().detach().scores.numpy()
-                labels = result.pred_instances.cpu().detach().labels.numpy()
                 bboxes = result.pred_instances.cpu().detach().bboxes.numpy()
+                labels = result.pred_instances.cpu().detach().labels.numpy()
 
                 # Filter based on threshold
                 indices = np.where(scores >= args.pred_threshold)[0]
                 scores = scores[indices]
-                labels = np.zeros_like(labels[indices])
                 bboxes = bboxes[indices]
+                labels = np.zeros_like(labels[indices])
 
-                # Placeholder if not tracking
-                track_ids = np.array([0] * len(indices))
+                # Placeholders if not tracking, segmenting
+                tracks = np.array([0] * len(indices))
+                masks = np.array([])
+                segmentations = np.array([])
 
                 if args.track:
-                    # Input to tracker has to be N X (x, y, x, y, scores, labels)
-                    detections = np.concatenate((bboxes, scores[:, np.newaxis], labels[:, np.newaxis]), axis=1)
-                    # Pass to tracker to update
-                    tracks = tracker.update(detections, frame)
-
-                    if len(tracks):
-                        # Return as N X (x, y, x, y, id, scores, labels, indices of true detections)
-                        bboxes = tracks[:, 0:4].astype('int')
-                        track_ids = tracks[:, 4].astype('int')
-                        scores = tracks[:, 5]
-                        labels = tracks[:, 6].astype('int')
-                    else:
-                        bboxes = np.array([])
-                        track_ids = np.array([])
-                        scores = np.array([])
-                        labels = np.array([])
+                    # Get the updates results from tracker
+                    scores, bboxes, labels, tracks, tracker = get_tracks(frame,
+                                                                         scores,
+                                                                         bboxes,
+                                                                         labels,
+                                                                         tracker)
+                if args.segment:
+                    # Get the masks for each bbox
+                    masks, segmentations = get_segments(sam_predictor,
+                                                        frame,
+                                                        bboxes)
 
                 # Record the predictions in tator format
                 for i_idx in range(len(bboxes)):
@@ -283,6 +349,7 @@ def algorithm(args):
                     h = float((ymax - ymin) / video_reader.height)
 
                     # For tator upload
+                    # TODO Segmentation masks loc type?
                     loc = {'media_id': media.id,
                            'type': loc_type_id,
                            'version': layer_type_id,
@@ -291,7 +358,7 @@ def algorithm(args):
                            'width': w,
                            'height': h,
                            'frame': f_idx,
-                           'track_id': track_ids[i_idx],
+                           'track_id': tracks[i_idx],
                            'attributes': {
                                'ScientificName': scientific,
                                'CommonName': "",
@@ -307,26 +374,31 @@ def algorithm(args):
                     predictions.append(pred)
 
                 if args.show_video:
-                    # Create a new 'result' after filtering, tracking
+                    # Create a new 'result' after filtering, tracking, segmenting
                     # (Only used for local visualizations)
-                    track_ids -= 1
-                    result_mod = InstanceData(metainfo=result.metainfo)
-                    result_mod.scores = torch.from_numpy(scores).to(device)
-                    result_mod.bboxes = torch.from_numpy(bboxes).to(device)
-                    result_mod.labels = torch.from_numpy(track_ids).to(device)
-                    result = DetDataSample(pred_instances=result_mod)
 
                     if args.track:
                         # Stash tracked object IDs in visualizer metadata
                         # (Only used for local visualizations)
-                        all_tracks = len(tracker.tracked_stracks) + \
-                                     len(tracker.removed_stracks) + \
-                                     len(tracker.lost_stracks)
+                        tracks -= 1
 
-                        object_tracker = np.arange(0, all_tracks)
-                        object_tracker = [f'OBJ {i}' for i in object_tracker]
-                        print(f" Tracking: {[i for i in track_ids]}")
-                        visualizer.dataset_meta['classes'] = object_tracker
+                        print(f" Tracking: {[i for i in tracks]}")
+                        num_tracks = get_num_tracks(tracker)
+                        object_tracks = np.arange(0, num_tracks)
+                        object_tracks = [f'OBJ {i}' for i in object_tracks]
+                        object_colors = [get_color(i) for i in object_tracks]
+
+                        # Pass to the visualizer
+                        visualizer.dataset_meta['classes'] = object_tracks
+                        visualizer.dataset_meta['palette'] = object_colors
+
+                    # bbox predictions
+                    pred_instances = InstanceData(metainfo=result.metainfo)
+                    pred_instances.bboxes = torch.from_numpy(bboxes).to(device)
+                    pred_instances.scores = torch.from_numpy(scores).to(device)
+                    pred_instances.labels = torch.from_numpy(tracks).to(device)
+                    pred_instances.masks = torch.from_numpy(masks).to(device)
+                    result = DetDataSample(pred_instances=pred_instances)
 
                     try:
                         # Add result to frame
@@ -345,8 +417,8 @@ def algorithm(args):
                     frame = visualizer.get_image()
 
                     # Display predictions as they are happening
-                    cv2.namedWindow('video', 0)
-                    mmcv.imshow(frame, 'video', 1)
+                    # cv2.namedWindow('video', 0)
+                    # mmcv.imshow(frame, 'video', 1)
 
                     # Write the frame to video file
                     video_writer.write(frame)
@@ -387,16 +459,16 @@ def algorithm(args):
 
         if args.upload and args.track:
             # Associate the localization ids with track ids
-            track_ids = [l['track_id'] for l in localizations]
-            track_ids = np.array(list(zip(track_ids, localization_ids)))
-            num_tracks = len(np.unique(track_ids.T[0]))
+            tracks = [l['track_id'] for l in localizations]
+            tracks = np.array(list(zip(tracks, localization_ids)))
+            num_tracks = len(np.unique(tracks.T[0]))
 
             print(f"NOTE: Uploading {num_tracks} tracks on {media.name}...")
             states = []
-            for track_id in np.unique(track_ids.T[0]):
+            for track_id in np.unique(tracks.T[0]):
                 state = {'type': state_type_id,
                          'version': layer_type_id,
-                         'localization_ids': track_ids.T[1][np.where(track_ids.T[0] == track_id)].tolist(),
+                         'localization_ids': tracks.T[1][np.where(tracks.T[0] == track_id)].tolist(),
                          'media_ids': [media_id],
                          'ScientificName': "Not Set",
                          'Notes': ""}
@@ -435,9 +507,6 @@ def main():
     parser.add_argument("--run_dir", type=str, required=True,
                         help="Directory containing the run")
 
-    parser.add_argument('--track', action='store_true',
-                        help='Track objects, else just detect them')
-
     parser.add_argument("--epoch", type=int, required=True,
                         help="Epoch N checkpoint to use")
 
@@ -453,11 +522,17 @@ def main():
     parser.add_argument('--nms_threshold', type=float, default=0.65,
                         help='Non-maximum suppression threshold (low is conservative)')
 
+    parser.add_argument('--track', action='store_true',
+                        help='Track objects')
+
+    parser.add_argument('--segment', action='store_true',
+                        help='Segment objects')
+
     parser.add_argument('--show_video', action='store_true',
                         help='Show video, and save it to the predictions directory')
 
     parser.add_argument('--upload', action='store_true',
-                        help='Upload predictions to tator')
+                        help='Upload predictions to Tator')
 
     parser.add_argument('--output_dir', type=str,
                         default=os.path.abspath("../../../Data/Predictions/"),
