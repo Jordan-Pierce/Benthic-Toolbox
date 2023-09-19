@@ -68,7 +68,7 @@ def download_image(api, media_id, frame, media_dir):
 
 def get_localizations(localizations, tracks):
     """
-    :param localizatins:
+    :param localizations:
     :param tracks:
     :return:
     """

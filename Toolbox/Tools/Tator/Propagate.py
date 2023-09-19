@@ -2,14 +2,51 @@ import os
 import sys
 import argparse
 
-import time
 import tator
 
 
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
-def delete(args):
+def get_localizations(localizations, tracks):
+    """
+    :param localizations:
+    :param tracks:
+    :return:
+    """
+    print(f"NOTE: Merging track localizations and localizations")
+
+    # Holds the localizations in the tracks
+    track_localizations = []
+    # Holds the standard version of localizations
+    clean_localizations = []
+
+    for track in tracks:
+        # The attributes dict for the current track
+        attributes = track.attributes
+        attributes['track_id'] = track.id
+        for localization in track.localizations:
+            # Assign the localization id, add attributes
+            t = {'id': localization}
+            t.update(attributes)
+            track_localizations.append(t)
+
+    for track_localization in track_localizations:
+        # Find the localization that corresponds to the track localization by id
+        localization = [l for l in localizations if l.id == track_localization['id']]
+
+        # If there is a localization (there should be)
+        if localization:
+            # Update the localization with attributes from track localization
+            clean_localization = localization[0]
+            clean_localization.attributes.update(track_localization)
+            # Save in cleaned list
+            clean_localizations.append(clean_localization)
+
+    return localizations
+
+
+def propagate(args):
     """
 
     :param args:
@@ -17,7 +54,7 @@ def delete(args):
     """
 
     print("\n###############################################")
-    print("Delete")
+    print("propagate")
     print("###############################################\n")
 
     try:
@@ -79,43 +116,33 @@ def delete(args):
 
         print(f"NOTE: Found {len(localizations)} localizations for {loc_name} layer {layer_name}")
 
-        # Don't delete all, just those that Need Review
-        if not args.delete_all:
-            # Grabs the localizations that Need Review, leaving the others behind
-            localizations = [l for l in localizations if l.attributes['Needs Review']]
+        # Identify target tracks
+        target_tracks = []
 
-        print(f"NOTE: Targeting {len(localizations)} localizations for {loc_name} type - layer {layer_name}")
+        for track in tracks:
+            if not track.attributes['Needs Review'] and track.attributes['ScientificName'] not in ['', 'Not Set']:
+                target_tracks.append(track)
 
-        try:
+        print(f"NOTE: Found {len(target_tracks)} tracks with labels to propagate")
 
-            if tracks or localizations:
-                print(f"NOTE: Deleting {len(tracks)} tracks, {len(localizations)} localizations in 15 seconds...")
-                time.sleep(15)
+        # Loop through each of these, change the label with the associate localizations
+        for track in target_tracks:
 
-            if tracks:
-                # Burn baby burn
-                response = api.delete_state_list(project=project_id,
-                                                 media_id=[media_id],
-                                                 type=state_type_id,
-                                                 version=[layer_type_id])
+            try:
 
-                print(f"NOTE: {response.message}")
+                response = api.update_localization_list(
+                    project=project_id,
+                    localization_bulk_update={
+                        "ids": track.localizations,
+                        "attributes": {"Needs Review": False, "ScientificName": track.attributes["ScientificName"]}
+                    }
+                )
 
-            if localizations:
-                # Get just the ids of target locs
-                ids = [l.id for l in localizations]
+                print(f"NOTE: Track ID {track.id} - {response['message']}")
 
-                # Burn baby burn
-                response = api.delete_localization_list(project=project_id,
-                                                        media_id=[media_id],
-                                                        type=loc_type_id,
-                                                        version=[layer_type_id],
-                                                        localization_bulk_delete={"ids": ids})
-                print(f"NOTE: {response.message}")
-
-        except Exception as e:
-            print(f"ERROR: {e}")
-
+            except Exception as e:
+                print(f"ERROR: Could not propagate track {track.id}'s label to associated bounding boxes.")
+                print(f"ERROR: {response['message']}")
 
 # -----------------------------------------------------------------------------
 # Main Function
@@ -126,7 +153,7 @@ def main():
 
     """
 
-    parser = argparse.ArgumentParser(description="Delete")
+    parser = argparse.ArgumentParser(description="Propagate")
 
     parser.add_argument("--api_token", type=str,
                         default=os.getenv('TATOR_TOKEN'),
@@ -138,13 +165,10 @@ def main():
     parser.add_argument("--media_ids", type=int, nargs='+',
                         help="ID for desired media(s)")
 
-    parser.add_argument("--delete_all", action='store_true',
-                        help="Delete all detections (not just 'Needs Review')")
-
     args = parser.parse_args()
 
     try:
-        delete(args)
+        propagate(args)
         print("Done.")
 
     except Exception as e:

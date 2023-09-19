@@ -6,6 +6,7 @@ import datetime
 import argparse
 import traceback
 import requests
+from tqdm import tqdm
 
 import cv2
 import torch
@@ -282,6 +283,18 @@ def algorithm(args):
         video_reader = mmcv.VideoReader(output_video_path)
         video_writer = None
 
+        # Start at
+        if args.start_at:
+            start_at = args.start_at
+        else:
+            start_at = 0
+
+        # End at
+        if args.end_at:
+            end_at = args.end_at
+        else:
+            end_at = video_reader.frame_cnt
+
         if args.show_video:
             # Create a path for the predictions video
             output_pred_path = output_video_path.split(".")[0] + "_algorithm.mp4"
@@ -293,8 +306,8 @@ def algorithm(args):
         # Loop through all the frames in the video
         for f_idx, frame in enumerate(track_iter_progress(video_reader)):
 
-            # Make predictions on every N frames
-            if f_idx % args.every_n == 0 and f_idx > args.start_at:
+            # Make predictions on every N frames within window
+            if f_idx % args.every_n == 0 and start_at < f_idx <= end_at:
 
                 # Make predictions
                 result = inference_detector(model, frame, test_pipeline=test_pipeline)
@@ -343,13 +356,12 @@ def algorithm(args):
                     ymax = int(bboxes[i_idx][3])
 
                     # Tator format of bounding boxes
-                    x = float(xmin / video_reader.width)
-                    y = float(ymin / video_reader.height)
-                    w = float((xmax - xmin) / video_reader.width)
-                    h = float((ymax - ymin) / video_reader.height)
+                    x = float(max(0.0, min(1.0, xmin / video_reader.width)))
+                    y = float(max(0.0, min(1.0, ymin / video_reader.height)))
+                    w = float(max(0.0, min(1.0, (xmax - xmin) / video_reader.width)))
+                    h = float(max(0.0, min(1.0, (ymax - ymin) / video_reader.height)))
 
                     # For tator upload
-                    # TODO Segmentation masks loc type?
                     loc = {'media_id': media.id,
                            'type': loc_type_id,
                            'version': layer_type_id,
@@ -358,7 +370,7 @@ def algorithm(args):
                            'width': w,
                            'height': h,
                            'frame': f_idx,
-                           'track_id': tracks[i_idx],
+                           'track_id': int(tracks[i_idx]),
                            'attributes': {
                                'ScientificName': scientific,
                                'CommonName': "",
@@ -397,7 +409,10 @@ def algorithm(args):
                     pred_instances.bboxes = torch.from_numpy(bboxes).to(device)
                     pred_instances.scores = torch.from_numpy(scores).to(device)
                     pred_instances.labels = torch.from_numpy(tracks).to(device)
-                    pred_instances.masks = torch.from_numpy(masks).to(device)
+
+                    if args.segment:
+                        pred_instances.masks = torch.from_numpy(masks).to(device)
+
                     result = DetDataSample(pred_instances=pred_instances)
 
                     try:
@@ -417,11 +432,15 @@ def algorithm(args):
                     frame = visualizer.get_image()
 
                     # Display predictions as they are happening
-                    # cv2.namedWindow('video', 0)
-                    # mmcv.imshow(frame, 'video', 1)
+                    cv2.namedWindow('video', 0)
+                    mmcv.imshow(frame, 'video', 1)
 
                     # Write the frame to video file
                     video_writer.write(frame)
+
+            # Exit the frame loop
+            if f_idx >= args.end_at:
+                break
 
         if args.show_video:
             # Release the video handler
@@ -452,10 +471,35 @@ def algorithm(args):
         if args.upload:
             # Create the localizations in the video.
             print(f"NOTE: Uploading {len(localizations)} detections on {media.name}...")
+
+            # Specify the batch size
+            batch_size = 500
+
+            # Calculate the number of batches needed
+            num_batches = int(np.ceil(len(localizations) / batch_size))
+
+            # Initialize a list to store all localization IDs
             localization_ids = []
-            for response in tator.util.chunked_create(api.create_localization_list, project_id, body=localizations):
-                localization_ids.extend(response.id)
-            print(f"NOTE: Successfully created {len(localization_ids)} localizations on {media.name}!")
+
+            # Outer loop to upload batches of localizations
+            for batch_num in tqdm(range(num_batches)):
+                # Calculate the start and end indices for the current batch
+                start_index = batch_num * batch_size
+                end_index = min((batch_num + 1) * batch_size, len(localizations))
+
+                # Extract the current batch of localizations
+                batch = localizations[start_index:end_index]
+
+                try:
+
+                    # Upload the current batch of localizations
+                    for response in tator.util.chunked_create(api.create_localization_list, project_id, body=batch):
+                        localization_ids.extend(response.id)
+
+                except Exception as e:
+                    print(f"ERROR: {e}")
+
+            print(f"NOTE: Successfully created {len(localization_ids)} localizations in total on {media.name}!")
 
         if args.upload and args.track:
             # Associate the localization ids with track ids
@@ -471,14 +515,35 @@ def algorithm(args):
                          'localization_ids': tracks.T[1][np.where(tracks.T[0] == track_id)].tolist(),
                          'media_ids': [media_id],
                          'ScientificName': "Not Set",
+                         'Needs Review': True,
                          'Notes': ""}
 
                 states.append(state)
 
+            # Specify the batch size
+            batch_size = 500
+
+            # Calculate the number of batches needed
+            num_batches = int(np.ceil(len(states) / batch_size))
+
+            # Create an empty list to store the state IDs for this batch
             state_ids = []
-            for response in tator.util.chunked_create(api.create_state_list, project_id, body=states):
-                state_ids += response.id
-            print(f"NOTE: Successfully created {len(state_ids)} tracks on {media.name}!")
+
+            # Outer loop to upload batches of states
+            for batch_num in tqdm(range(num_batches)):
+                # Calculate the start and end indices for the current batch
+                start_index = batch_num * batch_size
+                end_index = min((batch_num + 1) * batch_size, len(states))
+
+                # Extract the current batch of states
+                batch = states[start_index:end_index]
+
+                # Upload the current batch of states
+                for response in tator.util.chunked_create(api.create_state_list, project_id, body=batch):
+                    state_ids.extend(response.id)
+
+            # After the loop, you can work with `all_state_ids`, which contains all the state IDs from all batches.
+            print(f"NOTE: Successfully created {len(state_ids)} tracks in total on {media.name}!")
 
     print(f"NOTE: Completed inference on {len(media_ids)} medias.")
 
@@ -515,6 +580,9 @@ def main():
 
     parser.add_argument("--start_at", type=int, default=0,
                         help="Frame to start making predictions at")
+
+    parser.add_argument("--end_at", type=int, default=0,
+                        help="Frame to end making predictions at")
 
     parser.add_argument('--pred_threshold', type=float, default=0.3,
                         help='Prediction confidence threshold')
