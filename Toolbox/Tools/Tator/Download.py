@@ -101,7 +101,7 @@ def get_localizations(localizations, tracks):
             # Save in cleaned list
             clean_localizations.append(clean_localization)
 
-    return localizations
+    return clean_localizations
 
 
 def download(args):

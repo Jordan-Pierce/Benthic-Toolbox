@@ -1,9 +1,11 @@
 import os
 import sys
-import argparse
-
 import time
+import argparse
+from tqdm import tqdm
+
 import tator
+import numpy as np
 
 
 # ------------------------------------------------------------------------------------------------------------------
@@ -79,31 +81,71 @@ def delete(args):
 
         print(f"NOTE: Found {len(localizations)} localizations for {loc_name} layer {layer_name}")
 
-        # Don't delete all, just those that Need Review
-        if not args.delete_all:
-            # Grabs the localizations that Need Review, leaving the others behind
-            localizations = [l for l in localizations if l.attributes['Needs Review']]
+        if not args.start_frame:
+            start_frame = 0
+        else:
+            start_frame = args.start_frame
 
-        print(f"NOTE: Targeting {len(localizations)} localizations for {loc_name} type - layer {layer_name}")
+        if not args.end_frame:
+            end_frame = media.num_frames
+        else:
+            end_frame = args.end_frame
+
+        # Identify target tracks, localizations
+        target_tracks = []
+        target_localizations = []
+        # Represents the first and last frame with modifications
+        # A track may extend pass the end frame, so it's not counted
+        first_frame = start_frame
+        last_frame = start_frame
+
+        print(f"NOTE: Searching for tracks and localizations within frames [{start_frame, end_frame}]")
+
+        # Loop through all the tracks
+        for track in tqdm(tracks):
+            # Create a dictionary to map localization IDs to frames
+            id_to_frame = {loc.id: loc.frame for loc in localizations}
+            # Get all the localizations in the current track
+            track_locs = np.array([l for l in track.localizations])
+            # From the track localizations, get all the frame IDs efficiently
+            track_frames = np.array([id_to_frame[loc] for loc in track_locs if loc in id_to_frame])
+            # If the track contains localizations in frames within the window, add as target
+            if np.any((track_frames >= start_frame) & (track_frames <= end_frame)):
+                target_tracks.append(track)
+                # Then add all the localizations for the target track
+                target_localizations.extend([l for l in localizations if l.id in track_locs])
+                # Update the frame window representing where modifications occurred
+                if last_frame < min(track_frames):
+                    last_frame = min(track_frames)
+                if first_frame >= max(track_frames):
+                    first_frame = max(track_frames)
+
+        print(f"NOTE: Found {len(target_tracks)} tracks and {len(target_localizations)} "
+              f"within frames [{first_frame}, {last_frame}]")
 
         try:
 
-            if tracks or localizations:
-                print(f"NOTE: Deleting {len(tracks)} tracks, {len(localizations)} localizations in 15 seconds...")
+            if target_localizations or target_localizations:
+                print(f"NOTE: Deleting {len(target_tracks)} tracks and {len(target_localizations)} localizations "
+                      f"in 15 seconds...")
                 time.sleep(15)
 
-            if tracks:
+            if target_tracks:
+                # Get the ids for the target tracks
+                ids = [t.id for t in target_tracks]
+
                 # Burn baby burn
                 response = api.delete_state_list(project=project_id,
                                                  media_id=[media_id],
                                                  type=state_type_id,
-                                                 version=[layer_type_id])
+                                                 version=[layer_type_id],
+                                                 state_bulk_delete={"ids": ids})
 
                 print(f"NOTE: {response.message}")
 
-            if localizations:
-                # Get just the ids of target locs
-                ids = [l.id for l in localizations]
+            if target_localizations:
+                # Get the ids for the target localizations
+                ids = [l.id for l in target_localizations]
 
                 # Burn baby burn
                 response = api.delete_localization_list(project=project_id,
@@ -138,8 +180,11 @@ def main():
     parser.add_argument("--media_ids", type=int, nargs='+',
                         help="ID for desired media(s)")
 
-    parser.add_argument("--delete_all", action='store_true',
-                        help="Delete all detections (not just 'Needs Review')")
+    parser.add_argument("--start_frame", type=int,
+                        help="Start frame to propagate")
+
+    parser.add_argument("--end_frame", type=int,
+                        help="End frame to propagate")
 
     args = parser.parse_args()
 

@@ -514,9 +514,11 @@ def algorithm(args):
                          'version': layer_type_id,
                          'localization_ids': tracks.T[1][np.where(tracks.T[0] == track_id)].tolist(),
                          'media_ids': [media_id],
-                         'ScientificName': "Not Set",
-                         'Needs Review': True,
-                         'Notes': ""}
+                         'attributes':
+                             {'ScientificName': "Not Set",
+                              'Needs Review': True,
+                              'Notes': ""}
+                         }
 
                 states.append(state)
 

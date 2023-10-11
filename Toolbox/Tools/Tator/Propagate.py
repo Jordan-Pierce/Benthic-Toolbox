@@ -1,51 +1,15 @@
 import os
 import sys
 import argparse
+from tqdm import tqdm
 
 import tator
+import numpy as np
 
 
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
-def get_localizations(localizations, tracks):
-    """
-    :param localizations:
-    :param tracks:
-    :return:
-    """
-    print(f"NOTE: Merging track localizations and localizations")
-
-    # Holds the localizations in the tracks
-    track_localizations = []
-    # Holds the standard version of localizations
-    clean_localizations = []
-
-    for track in tracks:
-        # The attributes dict for the current track
-        attributes = track.attributes
-        attributes['track_id'] = track.id
-        for localization in track.localizations:
-            # Assign the localization id, add attributes
-            t = {'id': localization}
-            t.update(attributes)
-            track_localizations.append(t)
-
-    for track_localization in track_localizations:
-        # Find the localization that corresponds to the track localization by id
-        localization = [l for l in localizations if l.id == track_localization['id']]
-
-        # If there is a localization (there should be)
-        if localization:
-            # Update the localization with attributes from track localization
-            clean_localization = localization[0]
-            clean_localization.attributes.update(track_localization)
-            # Save in cleaned list
-            clean_localizations.append(clean_localization)
-
-    return localizations
-
-
 def propagate(args):
     """
 
@@ -54,7 +18,7 @@ def propagate(args):
     """
 
     print("\n###############################################")
-    print("propagate")
+    print("Propagate")
     print("###############################################\n")
 
     try:
@@ -116,17 +80,49 @@ def propagate(args):
 
         print(f"NOTE: Found {len(localizations)} localizations for {loc_name} layer {layer_name}")
 
+        if not args.start_frame:
+            start_frame = 0
+        else:
+            start_frame = args.start_frame
+
+        if not args.end_frame:
+            end_frame = media.frame_count
+        else:
+            end_frame = args.end_frame
+
         # Identify target tracks
         target_tracks = []
+        # Represents the first and last frame with modifications
+        # A track may extend pass the end frame, so it's not counted
+        first_frame = start_frame
+        last_frame = start_frame
 
-        for track in tracks:
+        print(f"NOTE: Searching for tracks with localizations in frames [{start_frame, end_frame}]")
+
+        # Loop through all the tracks
+        for track in tqdm(tracks):
+            # Find the tracks that don't need review, and the ScientificName has been modified
             if not track.attributes['Needs Review'] and track.attributes['ScientificName'] not in ['', 'Not Set']:
-                target_tracks.append(track)
+                # Create a dictionary to map localization IDs to frames
+                id_to_frame = {loc.id: loc.frame for loc in localizations}
+                # Get all the localizations in the current track
+                track_locs = np.array([l for l in track.localizations])
+                # From the track localizations, get all the frame IDs efficiently
+                track_frames = np.array([id_to_frame[loc] for loc in track_locs if loc in id_to_frame])
+                # If the track contains localizations in frames within the window, add as target
+                if np.all((track_frames >= start_frame) & (track_frames <= end_frame)):
+                    target_tracks.append(track)
+                    # Update the frame window representing where modifications occurred
+                    if first_frame < min(track_frames):
+                        first_frame = min(track_frames)
+                    if last_frame >= max(track_frames):
+                        last_frame = max(track_frames)
 
-        print(f"NOTE: Found {len(target_tracks)} tracks with labels to propagate")
+        print(f"NOTE: Found {len(target_tracks)} tracks with labels to propagate "
+              f"within frames [{first_frame}: {last_frame}]")
 
         # Loop through each of these, change the label with the associate localizations
-        for track in target_tracks:
+        for track in tqdm(target_tracks):
 
             try:
 
@@ -138,11 +134,12 @@ def propagate(args):
                     }
                 )
 
-                print(f"NOTE: Track ID {track.id} - {response['message']}")
+                print(f"NOTE: Track ID {track.id} - {response.message}")
 
             except Exception as e:
                 print(f"ERROR: Could not propagate track {track.id}'s label to associated bounding boxes.")
-                print(f"ERROR: {response['message']}")
+                print(f"ERROR: {response.message}")
+
 
 # -----------------------------------------------------------------------------
 # Main Function
@@ -164,6 +161,12 @@ def main():
 
     parser.add_argument("--media_ids", type=int, nargs='+',
                         help="ID for desired media(s)")
+
+    parser.add_argument("--start_frame", type=int,
+                        help="Start frame to propagate")
+
+    parser.add_argument("--end_frame", type=int,
+                        help="End frame to propagate")
 
     args = parser.parse_args()
 
