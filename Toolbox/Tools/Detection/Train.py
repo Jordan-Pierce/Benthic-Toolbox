@@ -87,6 +87,18 @@ def train(args):
         print(f"ERROR: Annotation file does not exist; check input provided")
         sys.exit(1)
 
+    # Set the class weights
+    if os.path.exists(args.class_weights):
+        with open(args.class_weights, 'r') as input_file:
+            weights = json.load(input_file)
+
+        print(f"NOTE: Creating class weights")
+        class_weights = [weights[_['name']] for _ in class_map]
+
+    else:
+        print(f"ERROR: Annotation file does not exist; check input provided")
+        sys.exit(1)
+
     # Set the config file
     if os.path.exists(args.config):
         config_file = args.config
@@ -120,14 +132,15 @@ def train(args):
 
     # Training parameters
     base_lr = args.lr
-    val_interval = 1
+    val_interval = 30
     max_epochs = args.max_epochs
     batch_size = args.batch_size
+    loss_weight = class_weights
 
     print(f"NOTE: Setting training parameters")
     cfg.max_epochs = max_epochs
     cfg.default_hooks['checkpoint']['interval'] = val_interval
-    cfg.default_hooks['checkpoint']['max_keep_ckpts'] = args.max_epochs
+    cfg.default_hooks['checkpoint']['max_keep_ckpts'] = val_interval
     cfg.optim_wrapper['optimizer']['lr'] = base_lr
 
     print(f"NOTE: Setting annotation files")
@@ -141,6 +154,9 @@ def train(args):
         cfg.model['train_cfg']['assigner']['num_classes'] = len(class_map)
     else:
         cfg.model['bbox_head']['num_classes'] = len(class_map)
+
+    # Class weights
+    cfg.model['train_cfg']['pos_weight'] = class_weights
 
     print(f"NOTE: Creating train dataloader")
     cfg.train_cfg['max_epochs'] = max_epochs
@@ -170,6 +186,7 @@ def train(args):
     cfg.test_evaluator['classwise'] = True
 
     print(f"NOTE: Setting up Tensorboard ")
+
     cfg.visualizer['vis_backends'].append({'type': 'TensorboardVisBackend'})
 
     print("NOTE: Setting launcher")
@@ -213,7 +230,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train")
 
     parser.add_argument("--config", type=str,
-                        default="./configs/mmyolo/rtmdet/rtmdet_m_syncbn_fast_8xb32-300e_coco.py",
+                        default="./configs/mmyolo/rtmdet/rtmdet_tiny_syncbn_fast_8xb32-300e_coco.py",
                         help="Path to model config file")
 
     parser.add_argument("--train", type=str, required=True,
@@ -228,19 +245,22 @@ def main():
     parser.add_argument("--class_map", type=str, required=True,
                         help="Path to the Class Map JSON file")
 
+    parser.add_argument("--class_weights", type=str, required=False,
+                        help="Path to the Class Weights file")
+
     parser.add_argument("--run_name", type=str, default="",
                         help="Name for run (optional)")
 
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Directory to save logs and models')
 
-    parser.add_argument('--batch_size', type=int, default=8,
+    parser.add_argument('--batch_size', type=int, default=32,
                         help='Number of samples to pass model in a single batch (GPU dependent)')
 
-    parser.add_argument('--max_epochs', type=int, default=30,
+    parser.add_argument('--max_epochs', type=int, default=500,
                         help='Total number of times model sees every sample in training set')
 
-    parser.add_argument('--lr', type=float, default=0.01,
+    parser.add_argument('--lr', type=float, default=0.001,
                         help='The amount to adjust model parameters by during back-prop')
 
     parser.add_argument('--launcher', choices=['none', 'pytorch', 'slurm', 'mpi'],

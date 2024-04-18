@@ -11,6 +11,17 @@ import pandas as pd
 import torch
 from mmdet.apis import DetInferencer
 
+import mmcv
+from mmdet.apis import inference_detector, init_detector
+from mmengine.config import Config, ConfigDict
+from mmengine.logging import print_log
+from mmengine.utils import ProgressBar, path
+
+from mmyolo.registry import VISUALIZERS
+from mmyolo.utils import switch_to_deploy
+from mmyolo.utils.labelme_utils import LabelmeFormat
+from mmyolo.utils.misc import get_file_list, show_data_classes
+
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -92,8 +103,9 @@ def inference(args):
 
     try:
         # Find the config file
-        config = glob.glob(f"{run_dir}*.py")[0]
-        config_name = os.path.basename(config).split(".")[0]
+        config_file = glob.glob(f"{run_dir}*.py")[0]
+        config_name = os.path.basename(config_file).split(".")[0]
+        config = Config.fromfile(config_file)
         print(f"NOTE: Using config file {config_name}")
     except:
         print(f"ERROR: Config file doesn't exist; please check input")
@@ -149,27 +161,42 @@ def inference(args):
 
     try:
         # Load inference object
-        inferencer = DetInferencer(model=config,
-                                   weights=checkpoint,
-                                   palette='coco',
-                                   show_progress=True)
-
+        model = init_detector(config, checkpoint, palette='random')
         print(f"NOTE: Weights {os.path.basename(checkpoint)} loaded successfully")
+
+        visualizer = VISUALIZERS.build(model.cfg.visualizer)
+        visualizer.dataset_meta = model.dataset_meta
+        dataset_classes = model.dataset_meta.get('classes')
+        show_data_classes(dataset_classes)
 
     except Exception as e:
         print(f"ERROR: Could not load model\n{e}")
         sys.exit(1)
 
     try:
-        # Dict of predictions, and visualization
-        print(f"NOTE: Making predictions for {media_id}")
-        results = inferencer(frame_paths,
-                             out_dir=output_dir,
-                             no_save_pred=False,
-                             pred_score_thr=args.pred_threshold)
+        for frame_path in frame_paths:
 
-        print(f"NOTE: Merging predictions")
-        merge_predictions(glob.glob(f"{output_dir}preds\\*.json"), class_map, output_dir)
+            # Dict of predictions, and visualization
+            print(f"NOTE: Making predictions for {os.path.basename(frame_path)}")
+            results = inference_detector(model, imgs=frame_path)
+
+            img = mmcv.imread(frame_path)
+
+            out_file = f"{output_dir}{os.path.basename(frame_path)}"
+
+            try:
+                visualizer.add_datasample(
+                    name=frame_path,
+                    image=img,
+                    data_sample=results,
+                    draw_gt=False,
+                    show=False,
+                    wait_time=0,
+                    pred_score_thr=args.pred_threshold)
+            except:
+                out_img = visualizer.get_image()
+                mmcv.imwrite(out_img, out_file)
+                pass
 
     except Exception as e:
         print(f"ERROR: Could not make prediction on {media_id}\n{e}")

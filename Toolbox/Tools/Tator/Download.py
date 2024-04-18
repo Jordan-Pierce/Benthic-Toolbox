@@ -74,30 +74,37 @@ def get_localizations(localizations, tracks):
     """
     print(f"NOTE: Merging track localizations and localizations")
 
-    # Holds the localizations in the tracks
     track_localizations = []
-    # Holds the standard version of localizations
     clean_localizations = []
 
+    # Create a dictionary for faster lookup
+    localizations_dict = {l.id: l for l in localizations}
+
     for track in tracks:
-        # The attributes dict for the current track
         attributes = track.attributes
         attributes['track_id'] = track.id
-        for localization in track.localizations:
-            # Assign the localization id, add attributes
-            t = {'id': localization}
-            t.update(attributes)
-            track_localizations.append(t)
+        for localization_id in track.localizations:
+            # Use the dictionary for faster lookup
+            localization = localizations_dict.get(localization_id)
+
+            if localization:
+                t = {'id': localization_id}
+                t.update(attributes)
+                track_localizations.append(t)
 
     for track_localization in track_localizations:
-        # Find the localization that corresponds to the track localization by id
-        localization = [l for l in localizations if l.id == track_localization['id']]
+        clean_localization = localizations_dict.get(track_localization['id'])
 
         # If there is a localization (there should be)
-        if localization:
-            # Update the localization with attributes from track localization
-            clean_localization = localization[0]
-            clean_localization.attributes.update(track_localization)
+        if clean_localization:
+            # If the localization doesn't have attributes (legacy)
+            if clean_localization.attributes is None:
+                clean_localization.attributes = track_localization
+
+            else:
+                # Update the localization with attributes from track localization
+                clean_localization.attributes.update(track_localization)
+
             # Save in cleaned list
             clean_localizations.append(clean_localization)
 
@@ -176,6 +183,7 @@ def download(args):
 
             # Get all localizations, filter for those that are actually bounding boxes
             localizations = api.get_localization_list(project_id, media_id=[media_id])
+            print(f"NOTE: Found {len(localizations)} annotations")
             localizations = [l for l in localizations if None not in [l.x, l.y, l.width, l.height]]
             print(f"NOTE: Found {len(localizations)} localizations")
 
@@ -191,10 +199,6 @@ def download(args):
             # Get the frames associate with localizations
             frames = list(set([l.frame for l in localizations]))
             print(f"NOTE: Found {len(frames)} frames with localizations for media {media_name}")
-
-            # Subset based on what user directs
-            frames = [f for f_idx, f in enumerate(frames) if f_idx % args.every_n == 0]
-            print(f"NOTE: Sampled every {args.every_n} frames ({len(frames)}) w/ localizations for media {media_name}")
 
             if not frames or not localizations:
                 print("NOTE: No frames with localizations for this media")
@@ -215,7 +219,7 @@ def download(args):
             annotations = []
 
             # Loop through each unique frame
-            for f_idx, frame in enumerate(frames):
+            for f_idx, frame in tqdm(enumerate(frames)):
 
                 # Find the localizations
                 frame_localizations = [l for l in localizations if l.frame == frame]
@@ -237,6 +241,19 @@ def download(args):
                     # Frame number, localization id
                     frame_number = frame_localization.frame
                     localization_id = frame_localization.id
+
+                    # Legacy attribute need review...
+                    if 'Needs Review' in frame_localization.attributes:
+                        n = 'Needs Review'
+                    elif 'NeedsReview' in frame_localization.attributes:
+                        n = 'NeedsReview'
+                    else:
+                        n = ""
+
+                    if n in frame_localization.attributes:
+                        needs_review = frame_localization.attributes[n]
+                    else:
+                        needs_review = "NULL"
 
                     # Legacy attribute name...
                     if 'Scientific Name' in frame_localization.attributes:
@@ -280,18 +297,19 @@ def download(args):
                         ymin,
                         xmax,
                         ymax,
+                        needs_review
                     ]
 
                     # Add to list
                     annotations.append(annotation)
 
             if annotations:
-
                 # Pandas dataframe
                 annotations = pd.DataFrame(annotations, columns=['Media', 'Image Name', 'Image Path',
                                                                  'Frame', 'Width', 'Height',
                                                                  'ScientificName', 'Mapped',
-                                                                 'xmin', 'ymin', 'xmax', 'ymax'])
+                                                                 'xmin', 'ymin', 'xmax', 'ymax',
+                                                                 'Needs Review'])
                 # Output to media directory for later
                 print(f"NOTE: Saving {len(annotations)} annotations to {media_dir}")
                 annotations.to_csv(f"{media_dir}/annotations.csv")
@@ -305,7 +323,7 @@ def download(args):
                 plot_distributions(annotations, media_dir, media_name)
 
         except Exception as e:
-            print(f"ERROR: Could not finish collecting media {media_id} from Tator")
+            print(f"ERROR: Could not finish collecting media {media_id} from TATOR")
             print(f"ERROR: {e}")
             traceback.print_exc()
 
@@ -330,9 +348,6 @@ def main():
 
     parser.add_argument("--media_ids", type=int, nargs='+',
                         help="ID for desired media(s)")
-
-    parser.add_argument("--every_n", type=int, default=1,
-                        help="Of frames with annotations, download every N")
 
     parser.add_argument("--label_map", type=str,
                         default=f"{os.path.abspath('../../../Data/benthic_label_map.json')}",

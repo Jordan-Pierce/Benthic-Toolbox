@@ -4,16 +4,125 @@ import argparse
 
 import json
 import random
+import traceback
+
 from tqdm import tqdm
 
+import math
+import numpy as np
 import pandas as pd
 from PIL import Image
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
+
 # ------------------------------------------------------------------------------------------------------------------
 # Functions
 # ------------------------------------------------------------------------------------------------------------------
+
+
+def clean_annotations(df):
+    """
+    An ever-growing list of conditions to clean annotations from TATOR
+    """
+
+    # Convert 'ScientificName' to lowercase
+    df['ScientificName'] = df['ScientificName'].str.lower()
+
+    # Replace values containing 'bryozoa' with 'bryozoa'
+    df['ScientificName'] = df['ScientificName'].replace({'.*bryozoa.*': 'bryozoa'}, regex=True)
+
+    # Replace values containing "'bebyce" with 'bebryce', capturing white spaces
+    df['ScientificName'] = df['ScientificName'].replace({"bebyce ": 'bebryce'}, regex=True)
+
+    # Replace values containing 'porifera' with 'porifera'
+    df['ScientificName'] = df['ScientificName'].replace({'.*porifera.*': 'porifera'}, regex=True)
+
+    # Replace values containing 'stichopathes' with 'stichopathes'
+    df['ScientificName'] = df['ScientificName'].replace({'.*stichopathes.*': 'stichopathes'}, regex=True)
+
+    # Replace values containing 'plexauridae' with 'plexauridae'
+    df['ScientificName'] = df['ScientificName'].replace({'.*plexauridae.*': 'plexauridae'}, regex=True)
+
+    # Replace values containing 'swiftia' with 'swiftia exserta'
+    df['ScientificName'] = df['ScientificName'].replace({'.*swiftia.*': 'swiftia exserta'}, regex=True)
+
+    # Replace values containing "'ellisella'" with 'ellisella'
+    df['ScientificName'] = df['ScientificName'].replace({"' *ellisella *'": 'ellisella'}, regex=True)
+
+    # Replace values containing 'unknown' with 'unknown'
+    df['ScientificName'] = df['ScientificName'].replace({'.*unknown.*': 'unknown'}, regex=True)
+
+    # Replace values containing 'no label' with 'not set'
+    df['ScientificName'] = df['ScientificName'].replace({'.*no label.*': 'not set'}, regex=True)
+
+    # Replace values containing 'unkown' with 'unknown'
+    df['ScientificName'] = df['ScientificName'].replace({'.*unkown.*': 'unknown'}, regex=True)
+
+    # Replace values containing 'thesea' with 'thesea nivea'
+    df['ScientificName'] = df['ScientificName'].replace({'.*thesea.*': 'thesea nivea'}, regex=True)
+
+    # Replace values that are only 'antipathes' with 'antipathes atlantica'
+    df['ScientificName'] = df['ScientificName'].replace({'^antipathes$': 'antipathes atlantica'}, regex=True)
+
+    # Replace values that are only 'muricea' with 'muricea pendula'
+    df['ScientificName'] = df['ScientificName'].replace({'^muricea$': 'muricea pendula'}, regex=True)
+
+    # Replace values containing 'hydrozoa' with 'unknown'
+    df['ScientificName'] = df['ScientificName'].replace({'.*hydrozoa.*': 'unknown'}, regex=True)
+
+    # Replace values that are only 'filograna' with 'unknown'
+    df['ScientificName'] = df['ScientificName'].replace({'^filograna$': 'unknown'}, regex=True)
+
+    # Replace values containing 'crinoid' with 'crinoid'
+    df['ScientificName'] = df['ScientificName'].replace({'.*crinoid.*': 'crinoid'}, regex=True)
+
+    non_coral_mapping_dict = {
+        'demospongiae': 'sponge',
+        'ircinia campana': 'sponge',
+        'pterois volitans': 'fish',
+        'oceanapia': 'sponge',
+        'schizoporella': 'bryozoa',
+        'pristigenys alta': 'fish',
+        'porifera': 'sponge',
+        'davidaster': 'crinoid',
+        'axinellidae': 'sponge',
+        'unidentified crinoidea': 'crinoid',
+        'gorgonocephalidae': 'sponge',
+        'comatulida': 'crinoid',
+        'chaetodon falcula': 'fish',
+        'spondylus americanus': 'fish',
+        'ircinia strobilina': 'sponge',
+        'xestospongia muta': 'sponge',
+        'bryozoan': 'bryozoa'
+
+    }
+
+    # Map the values
+    df['ScientificName'] = df['ScientificName'].replace(non_coral_mapping_dict)
+
+    # Drop those that can't be used in training
+    df = df[~df['ScientificName'].isin(['not set', 'unknown'])]
+    df.reset_index(drop=True, inplace=True)
+
+    return df
+
+
+# ------------------------------------------------------------------------------------------------------------------
+# Functions
+# ------------------------------------------------------------------------------------------------------------------
+
+def plot_distribution(annotations, path):
+    """
+    :param annotations:
+    :param path:
+    :return:
+    """
+
+    plt.figure(figsize=(20, 20))
+    annotations['ScientificName'].value_counts().plot(kind='bar')
+    plt.savefig(path + ".png")
+    plt.close()
 
 
 def plot_coco_samples(coco_file, output_dir, prefix, n_images=5, seed=None):
@@ -76,7 +185,7 @@ def plot_coco_samples(coco_file, output_dir, prefix, n_images=5, seed=None):
         plt.close()
 
 
-def concat_annotations(annotation_files):
+def concat_annotations(annotation_files, clean=False, sample=False, every_n=24):
     """
     :param annotation_files:
     :return:
@@ -95,13 +204,64 @@ def concat_annotations(annotation_files):
             print(f"ERROR: Annotation file {annotation_file} does not exists")
             sys.exit(1)
         else:
+            # Get the annotation file
+            annotation = pd.read_csv(annotation_file, index_col=0)
+
+            # Exclude those that need review
+            if "Needs Review" in annotation.columns:
+                annotation = annotation[annotation['Needs Review'] == False]
+
+            # Clean the annotations...
+            if clean:
+                annotation = clean_annotations(annotation)
+
+            # Sample 1 frame per second
+            if sample:
+                image_names = annotation['Image Name'].unique().tolist()
+                samples = image_names[::every_n]
+                annotation = annotation[annotation['Image Name'].isin(samples)]
+
             # Group all the annotations together into a single dataframe
-            annotations = pd.concat((annotations, pd.read_csv(annotation_file, index_col=0)))
+            annotations = pd.concat((annotations, annotation))
 
     # Reset the index
     annotations.reset_index(drop=True, inplace=True)
 
     return annotations
+
+
+def compute_class_weights(df, column_name, output_file):
+    """
+
+    :param df:
+    :param label_column:
+    :param output_file:
+    :return:
+    """
+
+    def create_class_weight(labels_dict, mu=0.15):
+        total = np.sum(list(labels_dict.values()))
+        keys = labels_dict.keys()
+        class_weight = dict()
+
+        for key in keys:
+            score = math.log(mu * total / float(labels_dict[key]))
+            class_weight[key] = score if score > 1.0 else 1.0
+
+        return class_weight
+
+    # Count the number of samples in each class
+    class_counts = df[column_name].value_counts()
+
+    # Create the labels dictionary
+    labels_dict = class_counts.to_dict()
+
+    # Calculate the class weights
+    class_weights = create_class_weight(labels_dict)
+
+    # Save the class weights as a JSON file with an indent of 4
+    with open(output_file, 'w') as f:
+        json.dump(class_weights, f, indent=4)
 
 
 def to_coco(annotations, column_name, class_mapping, coco_file):
@@ -183,18 +343,6 @@ def to_coco(annotations, column_name, class_mapping, coco_file):
     return coco_file
 
 
-def modify_column(value, class_list):
-    """
-    :param value:
-    :param class_list:
-    :return:
-    """
-    if value in class_list:
-        return value
-    else:
-        return 'Object'
-
-
 def coco(args):
     """
     :param ann_file:
@@ -221,35 +369,60 @@ def coco(args):
     valid_file = f"{output_dir}\\valid.json"
     test_file = f"{output_dir}\\test.json"
 
+    # For plotting the distribution
+    dist = f"{output_dir}\\distribution"
+    train_dist = f"{output_dir}\\train"
+    valid_dist = f"{output_dir}\\valid"
+    test_dist = f"{output_dir}\\test"
+
     # Output class map json file
     class_map_file = f"{output_dir}\\class_map.json"
 
+    # Output class weights
+    weights_file = f"{output_dir}\\class_weights.json"
+
     # Get the annotations per dataset
-    train_annotations = concat_annotations(args.train_files)
-    valid_annotations = concat_annotations(args.valid_files)
-    test_annotations = concat_annotations(args.test_files)
+    train_annotations = concat_annotations(args.train_files, clean=False, sample=True, every_n=24)
+    valid_annotations = concat_annotations(args.valid_files, clean=False, sample=True, every_n=24)
+    test_annotations = concat_annotations(args.test_files, clean=False, sample=True, every_n=24)
 
-    # Filter based on list
-    if args.isolate:
-        train_annotations[column_name] = train_annotations[column_name].apply(modify_column, args=(args.isolate,))
-        valid_annotations[column_name] = valid_annotations[column_name].apply(modify_column, args=(args.isolate,))
-        test_annotations[column_name] = test_annotations[column_name].apply(modify_column, args=(args.isolate,))
+    if False:
+        only_include = ["thesea nivea",
+                        "antipathes atlantica",
+                        "antipathes furcata",
+                        "muricea pendula",
+                        "swiftia exserta",
+                        "stichopathes",
+                        "ellisella elongata",
+                        "bebryce",
+                        "sponge",
+                        "fish"]
 
-    if args.single_object:
+        train_annotations = train_annotations[train_annotations[column_name].isin(only_include)]
+        valid_annotations = valid_annotations[valid_annotations[column_name].isin(only_include)]
+        test_annotations = test_annotations[test_annotations[column_name].isin(only_include)]
+
+    if True:
         train_annotations[column_name] = 'Object'
         valid_annotations[column_name] = 'Object'
         test_annotations[column_name] = 'Object'
 
-    if args.only_include:
-        train_annotations = train_annotations[train_annotations[column_name].isin(args.only_include)]
-        valid_annotations = valid_annotations[valid_annotations[column_name].isin(args.only_include)]
-        test_annotations = test_annotations[test_annotations[column_name].isin(args.only_include)]
+    plot_distribution(train_annotations, train_dist)
+    plot_distribution(valid_annotations, valid_dist)
+    plot_distribution(test_annotations, test_dist)
 
     # Combine
     annotations = pd.concat((train_annotations, valid_annotations, test_annotations))
+    plot_distribution(annotations, dist)
+
+    # Output the class weights file
+    compute_class_weights(annotations, column_name, weights_file)
+
+    # Combine
+    class_categories = annotations[column_name].unique()
 
     # Create a class mapping for category id (this means all annotation files must be added)
-    class_mapping = {v: i for i, v in enumerate(annotations[column_name].unique())}
+    class_mapping = {v: i for i, v in enumerate(class_categories)}
 
     # Create COCO format annotations for each of the datasets
     train_coco = to_coco(train_annotations, column_name, class_mapping, train_file)
@@ -299,14 +472,8 @@ def main():
     parser.add_argument("--column_name", type=str, default='ScientificName',
                         help="Label column to use; either ScientificName or Mapped")
 
-    parser.add_argument("--isolate", type=str, nargs="+",
-                        help="A list of class categories to isolate and subset from the whole dataset")
-
     parser.add_argument("--single_object", action='store_true',
                         help="Single 'Object' detector")
-
-    parser.add_argument("--only_include", type=str, nargs="+",
-                        help="A list of class categories to include and subset from the whole dataset")
 
     parser.add_argument("--plot_n_samples", type=int, default=15,
                         help="Plot N samples to show COCO labels on images")
@@ -323,6 +490,7 @@ def main():
 
     except Exception as e:
         print(f"ERROR: {e}")
+        print(traceback.format_exc())
 
 
 if __name__ == "__main__":

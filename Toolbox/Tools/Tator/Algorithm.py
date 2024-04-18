@@ -5,11 +5,9 @@ import json
 import datetime
 import argparse
 import traceback
-import requests
 from tqdm import tqdm
 
-import cv2
-import torch
+
 import tator
 import random
 import numpy as np
@@ -19,9 +17,7 @@ import mmcv
 from mmcv.transforms import Compose
 from mmdet.apis import init_detector
 from mmdet.apis import inference_detector
-from mmdet.structures import TrackDataSample
 from mmdet.structures import DetDataSample
-from mmengine.structures import PixelData
 from mmengine.structures import InstanceData
 from mmyolo.registry import VISUALIZERS
 
@@ -133,6 +129,18 @@ def algorithm(args):
         print(f"ERROR: Project ID provided is invalid; please check input")
         sys.exit(1)
 
+    try:
+        # The type of localization for the project (bounding box, attributes)
+        loc_type_id = 440  # Detection Box
+        loc_name = api.get_localization_type(loc_type_id).name
+        layer_type_id = 228  # AI Experiments
+        layer_name = api.get_version(layer_type_id).name
+        state_type_id = 438  # State Type
+        state_name = api.get_state_type(state_type_id).name
+    except Exception as e:
+        print(f"ERROR: Could not find the correct localization type in project {project_id}")
+        sys.exit(1)
+
     # List of media
     if args.media_ids:
         media_ids = args.media_ids
@@ -140,7 +148,7 @@ def algorithm(args):
         print(f"ERROR: Medias provided is invalid; please check input")
         sys.exit(1)
 
-    # Check that config file exists
+    # Create run directory
     if os.path.exists(args.run_dir):
         run_dir = f"{args.run_dir}\\"
         run_name = os.path.dirname(run_dir).split("\\")[-1]
@@ -181,18 +189,6 @@ def algorithm(args):
         print(f"ERROR: Class Map JSON file provided doesn't exist; please check input")
         sys.exit(1)
 
-    try:
-        # The type of localization for the project (bounding box, attributes)
-        loc_type_id = 440  # Detection Box
-        loc_name = api.get_localization_type(loc_type_id).name
-        layer_type_id = 228  # AI Experiments
-        layer_name = api.get_version(layer_type_id).name
-        state_type_id = 438  # State Type
-        state_name = api.get_state_type(state_type_id).name
-    except Exception as e:
-        print(f"ERROR: Could not find the correct localization type in project {project_id}")
-        sys.exit(1)
-
     # Root where all output is saved
     output_dir = f"{args.output_dir}\\"
 
@@ -207,14 +203,6 @@ def algorithm(args):
 
     # build the model from a config file and a checkpoint file
     model = init_detector(config, checkpoint, palette='random', device=device)
-
-    # build test pipeline
-    model.cfg.test_cfg = dict(max_per_img=300,
-                              min_bbox_size=0,
-                              nms=dict(iou_threshold=args.nms_threshold, type='nms'),
-                              nms_pre=30000,
-                              score_thr=args.pred_threshold)
-
     model.cfg.test_dataloader.dataset.pipeline[0].type = 'mmdet.LoadImageFromNDArray'
     test_pipeline = Compose(model.cfg.test_dataloader.dataset.pipeline)
 
@@ -223,6 +211,10 @@ def algorithm(args):
     # ------------------------------------------------
     # Create the local visualizer from cfg
     visualizer = VISUALIZERS.build(model.cfg.visualizer)
+
+    classes = visualizer.dataset_meta['class_label'] = model.cfg.train_dataloader.dataset.metainfo['classes']
+    colors = model.cfg.train_dataloader.dataset.metainfo['palette']
+    colors = [tuple(c) for c in colors]
 
     # ------------------------------------------------
     # Track
@@ -307,7 +299,7 @@ def algorithm(args):
         for f_idx, frame in enumerate(track_iter_progress(video_reader)):
 
             # Make predictions on every N frames within window
-            if f_idx % args.every_n == 0 and start_at < f_idx <= end_at:
+            if f_idx % args.every_n == 0 and start_at <= f_idx <= end_at:
 
                 # Make predictions
                 result = inference_detector(model, frame, test_pipeline=test_pipeline)
@@ -321,7 +313,7 @@ def algorithm(args):
                 indices = np.where(scores >= args.pred_threshold)[0]
                 scores = scores[indices]
                 bboxes = bboxes[indices]
-                labels = np.zeros_like(labels[indices])
+                labels = labels[indices]
 
                 # Placeholders if not tracking, segmenting
                 tracks = np.array([0] * len(indices))
@@ -408,7 +400,7 @@ def algorithm(args):
                     pred_instances = InstanceData(metainfo=result.metainfo)
                     pred_instances.bboxes = torch.from_numpy(bboxes).to(device)
                     pred_instances.scores = torch.from_numpy(scores).to(device)
-                    pred_instances.labels = torch.from_numpy(tracks).to(device)
+                    pred_instances.labels = torch.from_numpy(labels).to(device)
 
                     if args.segment:
                         pred_instances.masks = torch.from_numpy(masks).to(device)
@@ -439,7 +431,7 @@ def algorithm(args):
                     video_writer.write(frame)
 
             # Exit the frame loop
-            if f_idx >= args.end_at:
+            if f_idx >= end_at:
                 break
 
         if args.show_video:
@@ -588,9 +580,6 @@ def main():
 
     parser.add_argument('--pred_threshold', type=float, default=0.3,
                         help='Prediction confidence threshold')
-
-    parser.add_argument('--nms_threshold', type=float, default=0.65,
-                        help='Non-maximum suppression threshold (low is conservative)')
 
     parser.add_argument('--track', action='store_true',
                         help='Track objects')
